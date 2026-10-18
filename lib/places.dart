@@ -28,6 +28,16 @@ class Place {
     );
   }
 
+    /// Turns a place back into JSON so we can save it.
+  /// Uses the same keys as fromJson, so a saved place loads with fromJson.
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'admin1': region,
+        'country': country,
+        'latitude': latitude,
+        'longitude': longitude,
+      };
+
   /// Short name for the dashboard, e.g. "North Bay, Ontario".
   String get label {
     final r = region;

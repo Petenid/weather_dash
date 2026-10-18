@@ -1,5 +1,9 @@
+import 'dart:convert';
+
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'places.dart';
 import 'search_page.dart';
@@ -28,6 +32,8 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  final _prefs = SharedPreferencesAsync();
+
   Place _place = const Place(
     name: 'Témiscaming',
     region: 'Quebec',
@@ -35,18 +41,57 @@ class _HomePageState extends State<HomePage> {
     latitude: 46.72,
     longitude: -79.10,
   );
+  bool _fahrenheit = false;
   late Future<WeatherReport> _weather;
 
   @override
   void initState() {
     super.initState();
-    _weather = fetchWeather(_place.latitude, _place.longitude);
+    _weather = _start();
+  }
+
+  /// On startup: load saved settings first, then fetch the weather.
+  Future<WeatherReport> _start() async {
+    await _loadSettings();
+    return _fetch();
+  }
+
+  Future<WeatherReport> _fetch() {
+    return fetchWeather(
+      _place.latitude,
+      _place.longitude,
+      fahrenheit: _fahrenheit,
+    );
+  }
+
+  Future<void> _loadSettings() async {
+    try {
+      final savedPlace = await _prefs.getString('place');
+      final savedFahrenheit = await _prefs.getBool('fahrenheit');
+      if (!mounted) return;
+      setState(() {
+        if (savedPlace != null) {
+          _place = Place.fromJson(jsonDecode(savedPlace) as Map<String, dynamic>);
+        }
+        _fahrenheit = savedFahrenheit ?? false;
+      });
+    } catch (_) {
+      // If the saved settings can't be read, just keep the defaults.
+    }
   }
 
   void _refresh() {
     setState(() {
-      _weather = fetchWeather(_place.latitude, _place.longitude);
+      _weather = _fetch();
     });
+  }
+
+  void _toggleUnits() {
+    setState(() {
+      _fahrenheit = !_fahrenheit;
+      _weather = _fetch();
+    });
+    _prefs.setBool('fahrenheit', _fahrenheit);
   }
 
   Future<void> _openSearch() async {
@@ -57,8 +102,35 @@ class _HomePageState extends State<HomePage> {
     if (picked == null) return; // They went back without choosing.
     setState(() {
       _place = picked;
-      _weather = fetchWeather(picked.latitude, picked.longitude);
+      _weather = _fetch();
     });
+    _prefs.setString('place', jsonEncode(picked.toJson()));
+  }
+
+  Future<void> _openLink(String url) async {
+    var opened = false;
+    try {
+      opened = await launchUrl(Uri.parse(url));
+    } catch (_) {
+      opened = false;
+    }
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not open $url')),
+      );
+    }
+  }
+
+  Widget _link(String label, String url) {
+    return TextButton(
+      onPressed: () => _openLink(url),
+      style: TextButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(label),
+    );
   }
 
   @override
@@ -67,10 +139,20 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Weather Dash'),
         actions: [
-                    IconButton(
+          IconButton(
             icon: const Icon(Icons.search),
             tooltip: 'Find a city',
             onPressed: _openSearch,
+          ),
+          Tooltip(
+            message: _fahrenheit ? 'Switch to Celsius' : 'Switch to Fahrenheit',
+            child: TextButton(
+              onPressed: _toggleUnits,
+              child: Text(
+                _fahrenheit ? '°F' : '°C',
+                style: const TextStyle(fontSize: 18),
+              ),
+            ),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -89,21 +171,38 @@ class _HomePageState extends State<HomePage> {
                 return const CircularProgressIndicator();
               }
               if (snapshot.hasError) {
-                return Text(
-                  'Could not load the weather.\n${snapshot.error}',
-                  textAlign: TextAlign.center,
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 48),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Could not load the weather.\n${snapshot.error}',
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton(
+                      onPressed: _refresh,
+                      child: const Text('Try again'),
+                    ),
+                  ],
                 );
               }
               final report = snapshot.data!;
               return Column(
                 mainAxisSize: MainAxisSize.min,
-                                children: [
+                children: [
                   CurrentConditionsCard(
                     place: _place.label,
                     weather: report.current,
+                    tempUnit: report.tempUnit,
+                    windUnit: report.windUnit,
                   ),
                   const SizedBox(height: 16),
-                  HourlyChartCard(hours: report.hourly),
+                  HourlyChartCard(
+                    hours: report.hourly,
+                    tempUnit: report.tempUnit,
+                  ),
                   const SizedBox(height: 16),
                   DailyForecastCard(days: report.daily),
                 ],
@@ -112,11 +211,17 @@ class _HomePageState extends State<HomePage> {
           ),
         ),
       ),
-      bottomNavigationBar: const Padding(
-        padding: EdgeInsets.all(12),
-        child: Text(
-          'Weather data by Open-Meteo.com · Location search by GeoNames',
-          textAlign: TextAlign.center,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(8),
+        child: Wrap(
+          alignment: WrapAlignment.center,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('Weather data by'),
+            _link('Open-Meteo.com', 'https://open-meteo.com/'),
+            const Text('·  Location search by'),
+            _link('GeoNames', 'https://www.geonames.org/'),
+          ],
         ),
       ),
     );
@@ -128,10 +233,14 @@ class CurrentConditionsCard extends StatelessWidget {
     super.key,
     required this.place,
     required this.weather,
+    required this.tempUnit,
+    required this.windUnit,
   });
 
   final String place;
   final CurrentWeather weather;
+  final String tempUnit;
+  final String windUnit;
 
   @override
   Widget build(BuildContext context) {
@@ -145,18 +254,18 @@ class CurrentConditionsCard extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(place, style: text.titleLarge),
+              Text(place, style: text.titleLarge, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               Icon(
                 weatherIcon(weather.weatherCode, isDay: weather.isDay),
                 size: 72,
               ),
-              Text('${weather.temperature.round()}°C', style: text.displayLarge),
+              Text('${weather.temperature.round()}$tempUnit', style: text.displayLarge),
               Text(describeWeather(weather.weatherCode), style: text.titleMedium),
               const SizedBox(height: 16),
-              Text('Feels like ${weather.feelsLike.round()}°C'),
+              Text('Feels like ${weather.feelsLike.round()}$tempUnit'),
               Text(
-                'Wind ${weather.windSpeed.round()} km/h '
+                'Wind ${weather.windSpeed.round()} $windUnit '
                 '${compassDirection(weather.windDirection)}',
               ),
               Text('Humidity ${weather.humidity}%'),
@@ -259,9 +368,10 @@ String _hoursMinutes(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
     class HourlyChartCard extends StatelessWidget {
-  const HourlyChartCard({super.key, required this.hours});
+  const HourlyChartCard({super.key, required this.hours, required this.tempUnit});
 
   final List<HourlyPoint> hours;
+  final String tempUnit;
 
   @override
   Widget build(BuildContext context) {
@@ -351,7 +461,7 @@ String _hoursMinutes(DateTime t) =>
                           for (final spot in touchedSpots)
                             LineTooltipItem(
                               '${_hoursMinutes(hours[spot.x.toInt()].time)}\n'
-                              '${spot.y.toStringAsFixed(1)}°C',
+                              '${spot.y.toStringAsFixed(1)}$tempUnit',
                               TextStyle(color: colors.onInverseSurface),
                             ),
                         ],

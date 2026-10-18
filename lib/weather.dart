@@ -69,17 +69,21 @@ class WeatherReport {
   final CurrentWeather current;
   final List<HourlyPoint> hourly;
   final List<DailyForecast> daily;
+  final String tempUnit;
+  final String windUnit;
 
   const WeatherReport({
     required this.current,
     required this.hourly,
     required this.daily,
+    required this.tempUnit,
+    required this.windUnit,
   });
 }
 
 /// Asks Open-Meteo for current conditions, the next 24 hours,
 /// and a 7-day forecast.
-Future<WeatherReport> fetchWeather(double lat, double lon) async {
+Future<WeatherReport> fetchWeather(double lat, double lon, {bool fahrenheit = false}) async {
   final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
     'latitude': '$lat',
     'longitude': '$lon',
@@ -91,6 +95,8 @@ Future<WeatherReport> fetchWeather(double lat, double lon) async {
         'precipitation_probability_max',
     'forecast_days': '7',
     'timezone': 'auto',
+        if (fahrenheit) 'temperature_unit': 'fahrenheit',
+    if (fahrenheit) 'wind_speed_unit': 'mph',
   });
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -141,6 +147,8 @@ Future<WeatherReport> fetchWeather(double lat, double lon) async {
     current: CurrentWeather.fromJson(data['current'] as Map<String, dynamic>),
     hourly: hours,
     daily: days,
+    tempUnit: fahrenheit ? '°F' : '°C',
+    windUnit: fahrenheit ? 'mph' : 'km/h',
   );
 }
 
