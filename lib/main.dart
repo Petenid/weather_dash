@@ -29,17 +29,17 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<CurrentWeather> _weather;
+  late Future<WeatherReport> _weather;
 
   @override
   void initState() {
     super.initState();
-    _weather = fetchCurrentWeather(_latitude, _longitude);
+    _weather = fetchWeather(_latitude, _longitude);
   }
 
   void _refresh() {
     setState(() {
-      _weather = fetchCurrentWeather(_latitude, _longitude);
+      _weather = fetchWeather(_latitude, _longitude);
     });
   }
 
@@ -59,7 +59,7 @@ class _HomePageState extends State<HomePage> {
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: FutureBuilder<CurrentWeather>(
+          child: FutureBuilder<WeatherReport>(
             future: _weather,
             builder: (context, snapshot) {
               if (snapshot.connectionState != ConnectionState.done) {
@@ -71,9 +71,17 @@ class _HomePageState extends State<HomePage> {
                   textAlign: TextAlign.center,
                 );
               }
-              return CurrentConditionsCard(
-                place: _placeName,
-                weather: snapshot.data!,
+              final report = snapshot.data!;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CurrentConditionsCard(
+                    place: _placeName,
+                    weather: report.current,
+                  ),
+                  const SizedBox(height: 16),
+                  DailyForecastCard(days: report.daily),
+                ],
               );
             },
           ),
@@ -135,6 +143,91 @@ class CurrentConditionsCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class DailyForecastCard extends StatelessWidget {
+  const DailyForecastCard({super.key, required this.days});
+
+  final List<DailyForecast> days;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('7-day forecast', style: text.titleMedium),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  for (var i = 0; i < days.length; i++)
+                    Expanded(
+                      child: _DayColumn(
+                        day: days[i],
+                        label: i == 0 ? 'Today' : _weekdayName(days[i].date),
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DayColumn extends StatelessWidget {
+  const _DayColumn({required this.day, required this.label});
+
+  final DailyForecast day;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final muted = Theme.of(context).colorScheme.onSurfaceVariant;
+
+    return Tooltip(
+      message: describeWeather(day.weatherCode),
+      child: Column(
+        children: [
+          Text(label, style: text.labelLarge),
+          const SizedBox(height: 8),
+          Icon(weatherIcon(day.weatherCode, isDay: true), size: 32),
+          const SizedBox(height: 8),
+          Text('${day.high.round()}°', style: text.titleMedium),
+          Text(
+            '${day.low.round()}°',
+            style: text.bodyMedium?.copyWith(color: muted),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.water_drop, size: 12, color: muted),
+              Text(
+                '${day.precipitationChance}%',
+                style: text.bodySmall?.copyWith(color: muted),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String _weekdayName(DateTime date) {
+  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return names[date.weekday - 1];
 }
 
 String _hoursMinutes(DateTime t) =>

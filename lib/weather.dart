@@ -39,13 +39,41 @@ class CurrentWeather {
   }
 }
 
-/// Asks Open-Meteo for the current conditions at a location.
-Future<CurrentWeather> fetchCurrentWeather(double lat, double lon) async {
+/// One day of the daily forecast.
+class DailyForecast {
+  final DateTime date;
+  final int weatherCode;
+  final double high;
+  final double low;
+  final int precipitationChance;
+
+  const DailyForecast({
+    required this.date,
+    required this.weatherCode,
+    required this.high,
+    required this.low,
+    required this.precipitationChance,
+  });
+}
+
+/// Everything one request gives us: current conditions plus the forecast.
+class WeatherReport {
+  final CurrentWeather current;
+  final List<DailyForecast> daily;
+
+  const WeatherReport({required this.current, required this.daily});
+}
+
+/// Asks Open-Meteo for current conditions and a 7-day forecast.
+Future<WeatherReport> fetchWeather(double lat, double lon) async {
   final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
     'latitude': '$lat',
     'longitude': '$lon',
     'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,'
         'is_day,weather_code,wind_speed_10m,wind_direction_10m',
+    'daily': 'weather_code,temperature_2m_max,temperature_2m_min,'
+        'precipitation_probability_max',
+    'forecast_days': '7',
     'timezone': 'auto',
   });
 
@@ -54,7 +82,32 @@ Future<CurrentWeather> fetchCurrentWeather(double lat, double lon) async {
     throw Exception('Open-Meteo returned ${response.statusCode}');
   }
   final data = jsonDecode(response.body) as Map<String, dynamic>;
-  return CurrentWeather.fromJson(data['current'] as Map<String, dynamic>);
+
+  // Open-Meteo sends the daily forecast as separate lists (all the dates,
+  // all the highs, all the lows...). Item i of each list belongs to day i,
+  // so we zip them together into one DailyForecast per day.
+  final daily = data['daily'] as Map<String, dynamic>;
+  final dates = daily['time'] as List;
+  final codes = daily['weather_code'] as List;
+  final highs = daily['temperature_2m_max'] as List;
+  final lows = daily['temperature_2m_min'] as List;
+  final rainChances = daily['precipitation_probability_max'] as List;
+
+  final days = [
+    for (var i = 0; i < dates.length; i++)
+      DailyForecast(
+        date: DateTime.parse(dates[i] as String),
+        weatherCode: (codes[i] as num).toInt(),
+        high: (highs[i] as num).toDouble(),
+        low: (lows[i] as num).toDouble(),
+        precipitationChance: (rainChances[i] as num?)?.toInt() ?? 0,
+      ),
+  ];
+
+  return WeatherReport(
+    current: CurrentWeather.fromJson(data['current'] as Map<String, dynamic>),
+    daily: days,
+  );
 }
 
 /// WMO weather codes, from the Open-Meteo docs.
