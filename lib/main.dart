@@ -1,3 +1,4 @@
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import 'weather.dart';
@@ -74,11 +75,13 @@ class _HomePageState extends State<HomePage> {
               final report = snapshot.data!;
               return Column(
                 mainAxisSize: MainAxisSize.min,
-                children: [
+                                children: [
                   CurrentConditionsCard(
                     place: _placeName,
                     weather: report.current,
                   ),
+                  const SizedBox(height: 16),
+                  HourlyChartCard(hours: report.hourly),
                   const SizedBox(height: 16),
                   DailyForecastCard(days: report.daily),
                 ],
@@ -232,3 +235,127 @@ String _weekdayName(DateTime date) {
 
 String _hoursMinutes(DateTime t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
+    class HourlyChartCard extends StatelessWidget {
+  const HourlyChartCard({super.key, required this.hours});
+
+  final List<HourlyPoint> hours;
+
+  @override
+  Widget build(BuildContext context) {
+    if (hours.isEmpty) return const SizedBox.shrink();
+
+    final text = Theme.of(context).textTheme;
+    final colors = Theme.of(context).colorScheme;
+
+    // Give the line some breathing room above and below.
+    final temps = hours.map((h) => h.temperature).toList();
+    final lowest = temps.reduce((a, b) => a < b ? a : b);
+    final highest = temps.reduce((a, b) => a > b ? a : b);
+    final minY = (lowest - 2).floorToDouble();
+    final maxY = (highest + 2).ceilToDouble();
+
+    // One point per hour: x is the hour number (0–23), y is the temperature.
+    final spots = [
+      for (var i = 0; i < hours.length; i++)
+        FlSpot(i.toDouble(), hours[i].temperature),
+    ];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 24, 16),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Next 24 hours', style: text.titleMedium),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 200,
+                child: LineChart(
+                  LineChartData(
+                    minY: minY,
+                    maxY: maxY,
+                    gridData: const FlGridData(drawVerticalLine: false),
+                    borderData: FlBorderData(show: false),
+                    titlesData: FlTitlesData(
+                      topTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      rightTitles: const AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 36,
+                          interval: (maxY - minY) <= 12 ? 2 : 5,
+                          getTitlesWidget: (value, meta) {
+                            if (value == meta.min || value == meta.max) {
+                              return const SizedBox.shrink();
+                            }
+                            return Text('${value.round()}°', style: text.bodySmall);
+                          },
+                        ),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 28,
+                          interval: 1,
+                          getTitlesWidget: (value, meta) {
+                            final i = value.toInt();
+                            // Label every third hour so the times don't crowd.
+                            if (i % 3 != 0 || i >= hours.length) {
+                              return const SizedBox.shrink();
+                            }
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 6),
+                              child: Text(
+                                _hoursMinutes(hours[i].time),
+                                style: text.bodySmall,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                    lineTouchData: LineTouchData(
+                      touchTooltipData: LineTouchTooltipData(
+                        getTooltipColor: (_) => colors.inverseSurface,
+                        getTooltipItems: (touchedSpots) => [
+                          for (final spot in touchedSpots)
+                            LineTooltipItem(
+                              '${_hoursMinutes(hours[spot.x.toInt()].time)}\n'
+                              '${spot.y.toStringAsFixed(1)}°C',
+                              TextStyle(color: colors.onInverseSurface),
+                            ),
+                        ],
+                      ),
+                    ),
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        preventCurveOverShooting: true,
+                        color: colors.primary,
+                        barWidth: 3,
+                        dotData: const FlDotData(show: false),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: colors.primary.withValues(alpha: 0.15),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

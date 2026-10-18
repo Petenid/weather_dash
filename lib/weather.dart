@@ -39,6 +39,14 @@ class CurrentWeather {
   }
 }
 
+/// One hour of the hourly forecast.
+class HourlyPoint {
+  final DateTime time;
+  final double temperature;
+
+  const HourlyPoint({required this.time, required this.temperature});
+}
+
 /// One day of the daily forecast.
 class DailyForecast {
   final DateTime date;
@@ -56,36 +64,61 @@ class DailyForecast {
   });
 }
 
-/// Everything one request gives us: current conditions plus the forecast.
+/// Everything one request gives us.
 class WeatherReport {
   final CurrentWeather current;
+  final List<HourlyPoint> hourly;
   final List<DailyForecast> daily;
 
-  const WeatherReport({required this.current, required this.daily});
+  const WeatherReport({
+    required this.current,
+    required this.hourly,
+    required this.daily,
+  });
 }
 
-/// Asks Open-Meteo for current conditions and a 7-day forecast.
+/// Asks Open-Meteo for current conditions, the next 24 hours,
+/// and a 7-day forecast.
 Future<WeatherReport> fetchWeather(double lat, double lon) async {
   final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
     'latitude': '$lat',
     'longitude': '$lon',
     'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,'
         'is_day,weather_code,wind_speed_10m,wind_direction_10m',
+    'hourly': 'temperature_2m',
+    'forecast_hours': '24',
     'daily': 'weather_code,temperature_2m_max,temperature_2m_min,'
         'precipitation_probability_max',
     'forecast_days': '7',
     'timezone': 'auto',
   });
 
-  final response = await http.get(uri);
+  final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
     throw Exception('Open-Meteo returned ${response.statusCode}');
   }
-  final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-  // Open-Meteo sends the daily forecast as separate lists (all the dates,
-  // all the highs, all the lows...). Item i of each list belongs to day i,
-  // so we zip them together into one DailyForecast per day.
+  final Map<String, dynamic> data;
+  try {
+    data = jsonDecode(response.body) as Map<String, dynamic>;
+  } on FormatException {
+    throw Exception('Open-Meteo had a temporary problem. Please try again.');
+  }
+
+  // Hourly data comes as two lined-up lists: times and temperatures.
+  final hourly = data['hourly'] as Map<String, dynamic>;
+  final hourTimes = hourly['time'] as List;
+  final hourTemps = hourly['temperature_2m'] as List;
+
+  final hours = [
+    for (var i = 0; i < hourTimes.length; i++)
+      HourlyPoint(
+        time: DateTime.parse(hourTimes[i] as String),
+        temperature: (hourTemps[i] as num).toDouble(),
+      ),
+  ];
+
+  // Daily data works the same way, with more lists.
   final daily = data['daily'] as Map<String, dynamic>;
   final dates = daily['time'] as List;
   final codes = daily['weather_code'] as List;
@@ -106,6 +139,7 @@ Future<WeatherReport> fetchWeather(double lat, double lon) async {
 
   return WeatherReport(
     current: CurrentWeather.fromJson(data['current'] as Map<String, dynamic>),
+    hourly: hours,
     daily: days,
   );
 }
