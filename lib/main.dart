@@ -1,11 +1,9 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import 'places.dart';
+import 'search_page.dart';
 import 'weather.dart';
-
-const _latitude = 46.72;
-const _longitude = -79.10;
-const _placeName = 'Témiscaming, QC';
 
 void main() => runApp(const WeatherApp());
 
@@ -30,17 +28,36 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  Place _place = const Place(
+    name: 'Témiscaming',
+    region: 'Quebec',
+    country: 'Canada',
+    latitude: 46.72,
+    longitude: -79.10,
+  );
   late Future<WeatherReport> _weather;
 
   @override
   void initState() {
     super.initState();
-    _weather = fetchWeather(_latitude, _longitude);
+    _weather = fetchWeather(_place.latitude, _place.longitude);
   }
 
   void _refresh() {
     setState(() {
-      _weather = fetchWeather(_latitude, _longitude);
+      _weather = fetchWeather(_place.latitude, _place.longitude);
+    });
+  }
+
+  Future<void> _openSearch() async {
+    final picked = await Navigator.push<Place>(
+      context,
+      MaterialPageRoute(builder: (_) => const CitySearchPage()),
+    );
+    if (picked == null) return; // They went back without choosing.
+    setState(() {
+      _place = picked;
+      _weather = fetchWeather(picked.latitude, picked.longitude);
     });
   }
 
@@ -50,6 +67,11 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text('Weather Dash'),
         actions: [
+                    IconButton(
+            icon: const Icon(Icons.search),
+            tooltip: 'Find a city',
+            onPressed: _openSearch,
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Refresh',
@@ -77,7 +99,7 @@ class _HomePageState extends State<HomePage> {
                 mainAxisSize: MainAxisSize.min,
                                 children: [
                   CurrentConditionsCard(
-                    place: _placeName,
+                    place: _place.label,
                     weather: report.current,
                   ),
                   const SizedBox(height: 16),
@@ -93,7 +115,7 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: const Padding(
         padding: EdgeInsets.all(12),
         child: Text(
-          'Weather data by Open-Meteo.com',
+          'Weather data by Open-Meteo.com · Location search by GeoNames',
           textAlign: TextAlign.center,
         ),
       ),
