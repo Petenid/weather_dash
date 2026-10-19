@@ -245,10 +245,12 @@ class _ModelChart extends StatelessWidget {
               getTitlesWidget: (value, meta) {
                 final i = value.toInt();
                 if (i >= hours.length) return const SizedBox.shrink();
-                // "Now" at the start, then the day's name at each midnight.
+                // "Now" at the start, then the day's name at each midnight,
+                // except a midnight so soon after "Now" that the two would
+                // overlap.
                 final label = i == 0
                     ? t.now
-                    : hours[i].hour == 0
+                    : hours[i].hour == 0 && i >= 5
                         ? t.weekdayShort(hours[i])
                         : null;
                 if (label == null) return const SizedBox.shrink();
@@ -414,7 +416,7 @@ class _DailyTable extends StatelessWidget {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Table(
-        defaultColumnWidth: const FixedColumnWidth(68),
+        defaultColumnWidth: const FixedColumnWidth(76),
         columnWidths: const {0: FixedColumnWidth(150)},
         defaultVerticalAlignment: TableCellVerticalAlignment.middle,
         border: TableBorder(
@@ -425,9 +427,15 @@ class _DailyTable extends StatelessWidget {
             children: [
               cell(Text(t.highAndLow, style: TextStyle(fontSize: 14, color: muted))),
               for (var d = 0; d < days.length; d++)
-                cell(Text(
-                  d == 0 ? t.today : t.weekdayShort(days[d]),
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                cell(FittedBox(
+                  // Shrinks "Aujourd'hui" a little instead of splitting it.
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    d == 0 ? t.today : t.weekdayShort(days[d]),
+                    maxLines: 1,
+                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
+                  ),
                 )),
             ],
           ),

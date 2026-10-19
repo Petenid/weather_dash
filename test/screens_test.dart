@@ -225,8 +225,9 @@ void main() {
     test("matches Environment Canada's tables", () {
       // -20 °C with 30 km/h of wind feels like about -33.
       expect(windChillC(-20, 30), closeTo(-32.6, 0.5));
-      // No wind chill when it's mild or calm.
+      // No wind chill above freezing or when it's calm, as with Environment Canada.
       expect(windChillC(15, 30), isNull);
+      expect(windChillC(5, 30), isNull);
       expect(windChillC(-5, 2), isNull);
       // 30 °C at 70% humidity gives a humidex of about 41.
       expect(humidexC(30, 70), closeTo(41, 1));

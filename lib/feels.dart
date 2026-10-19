@@ -1,10 +1,11 @@
 import 'dart:math' as math;
 
 /// Wind chill, using Environment and Climate Change Canada's formula.
-/// Only meaningful when it's 10 °C or colder with at least 5 km/h of wind;
-/// otherwise this returns null. Everything is in °C and km/h.
+/// Like Environment Canada, this only reports it at 0 °C or colder with at
+/// least 5 km/h of wind; otherwise it returns null. Everything is in °C and
+/// km/h.
 double? windChillC(double tempC, double windKmh) {
-  if (tempC > 10 || windKmh < 5) return null;
+  if (tempC > 0 || windKmh < 5) return null;
   final v = math.pow(windKmh, 0.16);
   return 13.12 + 0.6215 * tempC - 11.37 * v + 0.3965 * tempC * v;
 }

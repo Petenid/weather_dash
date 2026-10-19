@@ -667,20 +667,31 @@ class PhotoTimesPanel extends StatelessWidget {
           const SizedBox(height: 8),
           for (final (label, span, swatch) in rows)
             if (span != null)
+              // The name on one line and the times under it, so neither has
+              // to squeeze into half the panel's width.
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 6),
                 child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(shape: BoxShape.circle, color: swatch),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 5),
+                      child: Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: swatch),
+                      ),
                     ),
                     const SizedBox(width: 10),
-                    Expanded(child: Text(label, style: const TextStyle(fontSize: 15))),
-                    const SizedBox(width: 8),
-                    Flexible(
-                      child: Text(range(span), textAlign: TextAlign.right, style: numberStyle(19)),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(label, style: const TextStyle(fontSize: 15)),
+                          const SizedBox(height: 2),
+                          Text(range(span), style: numberStyle(19)),
+                        ],
+                      ),
                     ),
                   ],
                 ),
