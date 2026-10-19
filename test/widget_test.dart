@@ -1,30 +1,56 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
+// Small checks for the helper functions. Run them with:  flutter test
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:weather_dash/main.dart';
+import 'package:weather_dash/places.dart';
+import 'package:weather_dash/theme.dart';
+import 'package:weather_dash/weather.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  test('degrees rounds and uses a real minus sign', () {
+    expect(degrees(2.5), '3°');
+    expect(degrees(-3.4), '−3°');
+    expect(degrees(-0.4), '0°');
+  });
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+  test('compass directions', () {
+    expect(compassDirection(0), 'N');
+    expect(compassDirection(44), 'NE');
+    expect(compassDirection(180), 'S');
+    expect(compassDirection(350), 'N');
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('UV levels follow the WHO bands', () {
+    expect(uvLevel(1), 'Low');
+    expect(uvLevel(4), 'Moderate');
+    expect(uvLevel(7), 'High');
+    expect(uvLevel(9), 'Very high');
+    expect(uvLevel(11), 'Extreme');
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  test('weather codes map to the right sky', () {
+    expect(skyKindFor(0), SkyKind.clear);
+    expect(skyKindFor(3), SkyKind.overcast);
+    expect(skyKindFor(63), SkyKind.rain);
+    expect(skyKindFor(73), SkyKind.snow);
+    expect(skyKindFor(85), SkyKind.snow);
+    expect(skyKindFor(95), SkyKind.storm);
+  });
+
+  test('a saved place loads back the same', () {
+    const place = Place(
+      name: 'North Bay',
+      region: 'Ontario',
+      country: 'Canada',
+      latitude: 46.3,
+      longitude: -79.46,
+    );
+    final copy = Place.fromJson(place.toJson());
+    expect(copy.label, 'North Bay, Ontario');
+    expect(copy.latitude, place.latitude);
+  });
+
+  test('Fahrenheit converts to Celsius for colours', () {
+    expect(toCelsius(32, fahrenheit: true), 0);
+    expect(toCelsius(10, fahrenheit: false), 10);
   });
 }

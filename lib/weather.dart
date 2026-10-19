@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ class CurrentWeather {
   final int windDirection;
   final int weatherCode;
   final bool isDay;
+  final double? uvIndex;
   final DateTime time;
 
   const CurrentWeather({
@@ -22,6 +24,7 @@ class CurrentWeather {
     required this.windDirection,
     required this.weatherCode,
     required this.isDay,
+    required this.uvIndex,
     required this.time,
   });
 
@@ -34,6 +37,7 @@ class CurrentWeather {
       windDirection: (json['wind_direction_10m'] as num).toInt(),
       weatherCode: (json['weather_code'] as num).toInt(),
       isDay: json['is_day'] == 1,
+      uvIndex: (json['uv_index'] as num?)?.toDouble(),
       time: DateTime.parse(json['time'] as String),
     );
   }
@@ -54,6 +58,9 @@ class DailyForecast {
   final double high;
   final double low;
   final int precipitationChance;
+  final DateTime? sunrise;
+  final DateTime? sunset;
+  final double? uvMax;
 
   const DailyForecast({
     required this.date,
@@ -61,6 +68,9 @@ class DailyForecast {
     required this.high,
     required this.low,
     required this.precipitationChance,
+    required this.sunrise,
+    required this.sunset,
+    required this.uvMax,
   });
 }
 
@@ -79,36 +89,43 @@ class WeatherReport {
     required this.tempUnit,
     required this.windUnit,
   });
+
+  /// Today's forecast (the first day), or null if the list is empty.
+  DailyForecast? get today => daily.isEmpty ? null : daily.first;
 }
 
 /// Asks Open-Meteo for current conditions, the next 24 hours,
 /// and a 7-day forecast.
-Future<WeatherReport> fetchWeather(double lat, double lon, {bool fahrenheit = false}) async {
+Future<WeatherReport> fetchWeather(
+  double lat,
+  double lon, {
+  bool fahrenheit = false,
+}) async {
   final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
     'latitude': '$lat',
     'longitude': '$lon',
     'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,'
-        'is_day,weather_code,wind_speed_10m,wind_direction_10m',
+        'is_day,weather_code,wind_speed_10m,wind_direction_10m,uv_index',
     'hourly': 'temperature_2m',
     'forecast_hours': '24',
     'daily': 'weather_code,temperature_2m_max,temperature_2m_min,'
-        'precipitation_probability_max',
+        'precipitation_probability_max,sunrise,sunset,uv_index_max',
     'forecast_days': '7',
     'timezone': 'auto',
-        if (fahrenheit) 'temperature_unit': 'fahrenheit',
+    if (fahrenheit) 'temperature_unit': 'fahrenheit',
     if (fahrenheit) 'wind_speed_unit': 'mph',
   });
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('Open-Meteo returned ${response.statusCode}');
+    throw Exception('Open-Meteo returned error ${response.statusCode}.');
   }
 
   final Map<String, dynamic> data;
   try {
     data = jsonDecode(response.body) as Map<String, dynamic>;
   } on FormatException {
-    throw Exception('Open-Meteo had a temporary problem. Please try again.');
+    throw Exception('Open-Meteo had a temporary problem.');
   }
 
   // Hourly data comes as two lined-up lists: times and temperatures.
@@ -118,10 +135,11 @@ Future<WeatherReport> fetchWeather(double lat, double lon, {bool fahrenheit = fa
 
   final hours = [
     for (var i = 0; i < hourTimes.length; i++)
-      HourlyPoint(
-        time: DateTime.parse(hourTimes[i] as String),
-        temperature: (hourTemps[i] as num).toDouble(),
-      ),
+      if (hourTemps[i] != null)
+        HourlyPoint(
+          time: DateTime.parse(hourTimes[i] as String),
+          temperature: (hourTemps[i] as num).toDouble(),
+        ),
   ];
 
   // Daily data works the same way, with more lists.
@@ -131,15 +149,21 @@ Future<WeatherReport> fetchWeather(double lat, double lon, {bool fahrenheit = fa
   final highs = daily['temperature_2m_max'] as List;
   final lows = daily['temperature_2m_min'] as List;
   final rainChances = daily['precipitation_probability_max'] as List;
+  final sunrises = daily['sunrise'] as List;
+  final sunsets = daily['sunset'] as List;
+  final uvMaxes = daily['uv_index_max'] as List;
 
   final days = [
     for (var i = 0; i < dates.length; i++)
       DailyForecast(
         date: DateTime.parse(dates[i] as String),
-        weatherCode: (codes[i] as num).toInt(),
+        weatherCode: (codes[i] as num?)?.toInt() ?? -1,
         high: (highs[i] as num).toDouble(),
         low: (lows[i] as num).toDouble(),
         precipitationChance: (rainChances[i] as num?)?.toInt() ?? 0,
+        sunrise: _parseTime(sunrises[i]),
+        sunset: _parseTime(sunsets[i]),
+        uvMax: (uvMaxes[i] as num?)?.toDouble(),
       ),
   ];
 
@@ -150,6 +174,21 @@ Future<WeatherReport> fetchWeather(double lat, double lon, {bool fahrenheit = fa
     tempUnit: fahrenheit ? '°F' : '°C',
     windUnit: fahrenheit ? 'mph' : 'km/h',
   );
+}
+
+/// Reads a time like "2026-10-18T07:22", or returns null if it's missing.
+DateTime? _parseTime(Object? value) =>
+    value is String ? DateTime.tryParse(value) : null;
+
+/// Turns an error into a sentence a person can act on.
+String friendlyError(Object error) {
+  if (error is TimeoutException) {
+    return 'Open-Meteo took too long to answer. Check your connection and try again.';
+  }
+  if (error is http.ClientException) {
+    return "Can't reach Open-Meteo. Check your internet connection and try again.";
+  }
+  return error.toString().replaceFirst('Exception: ', '');
 }
 
 /// WMO weather codes, from the Open-Meteo docs.
@@ -189,14 +228,14 @@ String describeWeather(int code) => _descriptions[code] ?? 'Unknown';
 
 IconData weatherIcon(int code, {required bool isDay}) {
   return switch (code) {
-    0 || 1 => isDay ? Icons.wb_sunny : Icons.nights_stay,
-    2 => isDay ? Icons.wb_cloudy : Icons.nights_stay,
-    3 => Icons.cloud,
+    0 || 1 => isDay ? Icons.wb_sunny_outlined : Icons.nights_stay_outlined,
+    2 => isDay ? Icons.wb_cloudy_outlined : Icons.nights_stay_outlined,
+    3 => Icons.cloud_outlined,
     45 || 48 => Icons.blur_on,
     >= 51 && <= 57 => Icons.grain,
-    (>= 61 && <= 67) || (>= 80 && <= 82) => Icons.water_drop,
+    (>= 61 && <= 67) || (>= 80 && <= 82) => Icons.water_drop_outlined,
     (>= 71 && <= 77) || 85 || 86 => Icons.ac_unit,
-    >= 95 => Icons.flash_on,
+    >= 95 => Icons.bolt,
     _ => Icons.help_outline,
   };
 }
@@ -206,3 +245,19 @@ String compassDirection(int degrees) {
   const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
   return directions[((degrees % 360) / 45).round() % 8];
 }
+
+/// The standard WHO wording for a UV index value.
+String uvLevel(double uv) {
+  if (uv < 3) return 'Low';
+  if (uv < 6) return 'Moderate';
+  if (uv < 8) return 'High';
+  if (uv < 11) return 'Very high';
+  return 'Extreme';
+}
+
+/// A rounded temperature like "−3°", using a proper minus sign.
+String degrees(double value) => '${value.round()}°'.replaceFirst('-', '−');
+
+/// "07:05" style time.
+String hoursMinutes(DateTime t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';

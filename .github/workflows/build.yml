@@ -1,0 +1,97 @@
+# Builds Weather Dash on GitHub's Windows computers.
+#
+# Every push to main: checks the code, runs the tests and builds the app.
+#   The build appears under the run's "Artifacts" for testing.
+# Every tag starting with "v" (for example v1.0.0): does all of that, then
+#   publishes a GitHub Release with a portable .zip and a Windows installer.
+
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write # Needed to publish releases.
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Check the code
+        run: flutter analyze --no-fatal-infos
+
+      - name: Run the tests
+        run: flutter test
+
+      - name: Work out the version number
+        id: version
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -like 'refs/tags/v*') {
+            $v = $env:GITHUB_REF_NAME.Substring(1)
+          } else {
+            $v = (Select-String -Path pubspec.yaml -Pattern '^version:\s*([0-9.]+)').Matches[0].Groups[1].Value
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build the Windows app
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }} --build-number=${{ github.run_number }}
+
+      # Flutter apps need Microsoft's C++ runtime. Most PCs have it, but
+      # shipping these three files next to the app means it works on all of them.
+      - name: Add the C++ runtime files
+        shell: pwsh
+        run: |
+          $release = "build\windows\x64\runner\Release"
+          foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll') {
+            Copy-Item "$env:WINDIR\System32\$dll" $release
+          }
+
+      - name: Make the portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Compress-Archive -Path "build\windows\x64\runner\Release\*" `
+            -DestinationPath "dist\WeatherDash-${{ steps.version.outputs.version }}-windows-portable.zip"
+
+      - name: Make the installer
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --no-progress -y
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" installer\weather_dash.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Keep the build for testing
+        uses: actions/upload-artifact@v7
+        with:
+          name: WeatherDash-${{ steps.version.outputs.version }}-build${{ github.run_number }}
+          path: dist/*
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Weather Dash ${{ steps.version.outputs.version }}
+          generate_release_notes: true
+          files: dist/*

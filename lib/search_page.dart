@@ -41,7 +41,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
-                hintText: 'City name, e.g. North Bay or Paris, France',
+                hintText: 'City or town, like North Bay or Paris, France',
                 prefixIcon: const Icon(Icons.search),
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
@@ -61,7 +61,13 @@ class _CitySearchPageState extends State<CitySearchPage> {
 
   Widget _buildResults() {
     if (_results == null) {
-      return const Center(child: Text('Type a city name and press Enter.'));
+      return const Center(
+        child: Text(
+          'Type a city or town, then press Enter.\n'
+          'Add a province or country after a comma to narrow it down.',
+          textAlign: TextAlign.center,
+        ),
+      );
     }
 
     return FutureBuilder<List<Place>>(
@@ -73,7 +79,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Search failed.\n${snapshot.error}',
+              'Search failed. ${snapshot.error.toString().replaceFirst('Exception: ', '')}',
               textAlign: TextAlign.center,
             ),
           );
@@ -82,7 +88,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
         final places = snapshot.data!;
         if (places.isEmpty) {
           return const Center(
-            child: Text('No places found. Try a different spelling.'),
+            child: Text('No places match that name. Check the spelling, or try a larger town nearby.'),
           );
         }
 
