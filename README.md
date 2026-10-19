@@ -1,11 +1,16 @@
 # Weather Dash
 
-A weather dashboard for Windows, built with Flutter for Monthly Build Challenge #1.
+A weather dashboard for Windows and the web, built with Flutter for Monthly Build Challenge #1.
 
 The top of the window is a sky that changes with the real weather: bright blue on a clear afternoon, grey and drifting under cloud, rain or snow falling when it's wet, and stars over a deep navy on a clear night. Along its bottom edge, the horizon traces the sun's path from sunrise to sunset and shows where the sun is right now, with the moon's phase beside it after dark.
 
-<!-- Screenshots go here: add images to docs/ and link them, for example
-![Weather Dash on a clear day](docs/screenshot-day.png) -->
+![Weather Dash on a clear night](docs/screenshots/night-english.png)
+
+| French, light mode | A day's details | Mini mode |
+|---|---|---|
+| ![Weather Dash in French](docs/screenshots/light-french.png) | ![Day details](docs/screenshots/day-details.png) | ![Mini mode](docs/screenshots/mini.png) |
+
+This was my entry for the local developers' group Monthly Build Challenge #1. The approach and what I learned are in [SUBMISSION.md](SUBMISSION.md).
 
 ## Try it in your browser
 
