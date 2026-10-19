@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'air_quality.dart';
 import 'day_details.dart';
 import 'hourly_chart.dart';
+import 'moon.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -16,6 +17,8 @@ class GroundSections extends StatelessWidget {
     required this.report,
     required this.fahrenheit,
     required this.comparison,
+    required this.insights,
+    required this.radar,
     required this.air,
     required this.airError,
     required this.onOpenLink,
@@ -24,6 +27,8 @@ class GroundSections extends StatelessWidget {
   final WeatherReport report;
   final bool fahrenheit;
   final Widget comparison; // The forecast-models section.
+  final Widget insights; // "At a glance".
+  final Widget radar;
   final AirQuality? air;
   final String? airError;
   final void Function(String url) onOpenLink;
@@ -56,6 +61,8 @@ class GroundSections extends StatelessWidget {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  insights,
+                  const SizedBox(height: 36),
                   if (wide)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -77,6 +84,8 @@ class GroundSections extends StatelessWidget {
                     const SizedBox(height: 40),
                     details,
                   ],
+                  const SizedBox(height: 48),
+                  radar,
                   const SizedBox(height: 48),
                   comparison,
                   const SizedBox(height: 40),
@@ -343,6 +352,7 @@ class DetailsPanel extends StatelessWidget {
     final sunset = today?.sunset;
     final uv = now.uvIndex;
     final uvMax = today?.uvMax;
+    final moon = MoonPhase.at(DateTime.now());
     final aqi = air?.usAqi;
     final pm25 = air?.pm25;
 
@@ -413,6 +423,11 @@ class DetailsPanel extends StatelessWidget {
               note: uvLevel(uvMax),
               value: Text('${uvMax.round()}', style: numberStyle(22)),
             ),
+          _DetailRow(
+            label: 'Moon',
+            note: '${moon.name}, ${(moon.illumination * 100).round()}% lit',
+            value: MoonPicture(phase: moon, darkColor: colors.outlineVariant),
+          ),
           if (sunrise != null)
             _DetailRow(
               label: 'Sunrise',
@@ -521,6 +536,16 @@ class _Credits extends StatelessWidget {
         link('GeoNames', 'https://www.geonames.org/'),
         Text('. Air quality from the ', style: plain),
         link('Copernicus Atmosphere Monitoring Service', 'https://atmosphere.copernicus.eu/'),
+        Text('. Past weather from ', style: plain),
+        link('ERA5, Copernicus Climate Change Service', 'https://climate.copernicus.eu/'),
+        Text('. Alerts from ', style: plain),
+        link('Environment and Climate Change Canada', 'https://weather.gc.ca/'),
+        Text('. Aurora forecast from ', style: plain),
+        link('NOAA Space Weather Prediction Center', 'https://www.swpc.noaa.gov/'),
+        Text('. Radar from ', style: plain),
+        link('RainViewer', 'https://www.rainviewer.com/'),
+        Text(', maps from ', style: plain),
+        link('OpenStreetMap contributors', 'https://www.openstreetmap.org/copyright'),
         Text('.', style: plain),
       ],
     );

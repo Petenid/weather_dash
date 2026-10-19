@@ -2,8 +2,11 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:weather_dash/air_quality.dart';
+import 'package:weather_dash/aurora.dart';
+import 'package:weather_dash/moon.dart';
 import 'package:weather_dash/places.dart';
 import 'package:weather_dash/theme.dart';
+import 'package:weather_dash/updates.dart';
 import 'package:weather_dash/weather.dart';
 
 void main() {
@@ -106,5 +109,32 @@ void main() {
     expect(report.next24Hours.length, 24);
     expect(report.next24Hours.first.time.hour, 20);
     expect(report.hoursOn(DateTime(2026, 10, 19)).length, 24);
+  });
+
+  test('moon phases', () {
+    // 2026-07-29 was close to a full moon; 2026-08-12 close to a new moon.
+    expect(MoonPhase.at(DateTime.utc(2026, 7, 29, 15)).illumination, greaterThan(0.95));
+    expect(MoonPhase.at(DateTime.utc(2026, 8, 12, 18)).illumination, lessThan(0.05));
+  });
+
+  test('version comparison for updates', () {
+    expect(isNewer('1.2.0', '1.1.9'), isTrue);
+    expect(isNewer('1.0.0', '1.0.0'), isFalse);
+    expect(isNewer('0.9.5', '1.0.0'), isFalse);
+    expect(isNewer('2.0', '1.9.9'), isTrue);
+  });
+
+  test('Témiscaming is in aurora country, Miami is not', () {
+    expect(magneticLatitude(46.72, -79.10), closeTo(56, 1.5));
+    expect(auroraRelevant(46.72, -79.10), isTrue);
+    expect(auroraRelevant(25.76, -80.19), isFalse);
+  });
+
+  test('12-hour clock', () {
+    use24HourClock = false;
+    expect(hoursMinutes(DateTime(2026, 1, 1, 13, 5)), '1:05 pm');
+    expect(hoursMinutes(DateTime(2026, 1, 1, 0, 0)), '12 am');
+    use24HourClock = true;
+    expect(hoursMinutes(DateTime(2026, 1, 1, 13, 5)), '13:05');
   });
 }

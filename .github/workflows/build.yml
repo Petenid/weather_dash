@@ -53,7 +53,7 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Build the Windows app
-        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }} --build-number=${{ github.run_number }}
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.version }} --build-number=${{ github.run_number }} --dart-define=APP_VERSION=${{ steps.version.outputs.version }}
 
       # Flutter apps need Microsoft's C++ runtime. Most PCs have it, but
       # shipping these three files next to the app means it works on all of them.

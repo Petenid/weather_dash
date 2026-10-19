@@ -2,7 +2,9 @@
 #define RUNNER_FLUTTER_WINDOW_H_
 
 #include <flutter/dart_project.h>
+#include <flutter/encodable_value.h>
 #include <flutter/flutter_view_controller.h>
+#include <flutter/method_channel.h>
 
 #include <memory>
 
@@ -28,6 +30,13 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Weather Dash: lets the Dart code switch the window into "mini mode",
+  // a small window that stays on top of other windows.
+  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> window_channel_;
+  RECT saved_bounds_{};
+  bool has_saved_bounds_ = false;
+  void SetMiniMode(bool on);
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

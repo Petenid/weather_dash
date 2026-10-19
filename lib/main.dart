@@ -7,29 +7,48 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'air_quality.dart';
+import 'alerts.dart';
+import 'aurora.dart';
 import 'comparison.dart';
 import 'dashboard.dart';
+import 'insights.dart';
+import 'location.dart';
+import 'mini_view.dart';
 import 'models.dart';
+import 'normals.dart';
+import 'offline_cache.dart';
 import 'places.dart';
+import 'radar.dart';
 import 'search_page.dart';
+import 'settings.dart';
+import 'share_image.dart';
 import 'sky.dart';
 import 'theme.dart';
+import 'updates.dart';
 import 'weather.dart';
 
-void main() => runApp(const WeatherApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await loadSettings(); // Before the first frame, so the theme is right from the start.
+  runApp(const WeatherApp());
+}
 
 class WeatherApp extends StatelessWidget {
   const WeatherApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Weather Dash',
-      debugShowCheckedModeBanner: false,
-      theme: buildTheme(Brightness.light),
-      darkTheme: buildTheme(Brightness.dark),
-      themeMode: ThemeMode.system, // Follow the Windows light/dark setting.
-      home: const HomePage(),
+    // Rebuilds when the settings change, so a new theme applies at once.
+    return ValueListenableBuilder<AppSettings>(
+      valueListenable: settings,
+      builder: (context, s, _) => MaterialApp(
+        title: 'Weather Dash',
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(Brightness.light),
+        darkTheme: buildTheme(Brightness.dark),
+        themeMode: s.themeMode,
+        home: const HomePage(),
+      ),
     );
   }
 }
@@ -51,11 +70,13 @@ class _HomePageState extends State<HomePage> {
   );
 
   Timer? _timer;
+  final _skyKey = GlobalKey(); // For taking a picture of the sky.
 
   // What the person has chosen.
   Place _place = _defaultPlace;
   bool _fahrenheit = false;
   List<Place> _favourites = [];
+  bool _mini = false;
 
   // What's on screen. The report and the place it belongs to are kept
   // together, so the name at the top always matches the numbers below it,
@@ -65,23 +86,32 @@ class _HomePageState extends State<HomePage> {
   String? _error;
   bool _loading = true;
 
-  // The forecast-models comparison loads separately, so a slow or failed
-  // comparison never holds up the main forecast.
+  // Extras that load on their own, so a slow or failed one never holds up
+  // the main forecast. Each remembers which place it belongs to.
   ModelComparison? _models;
   Place? _modelsPlace;
   String? _modelsError;
-
-  // Air quality comes from a separate service, so it loads on its own too.
   AirQuality? _air;
   Place? _airPlace;
   String? _airError;
+  Normals? _normals;
+  Place? _normalsPlace;
+  List<WeatherAlert> _alerts = const [];
+  Place? _alertsPlace;
+  AuroraOutlook? _aurora;
+  Place? _auroraPlace;
+  UpdateInfo? _update;
 
   // Counts requests, so a slow old answer can't overwrite a newer one.
   int _requestId = 0;
 
+  // The wind unit the current data was fetched with.
+  String _windUnit = settings.value.windUnit;
+
   @override
   void initState() {
     super.initState();
+    settings.addListener(_settingsChanged);
     _start();
     // Fetch fresh data every 15 minutes, so the dashboard can stay open.
     _timer = Timer.periodic(const Duration(minutes: 15), (_) => _load());
@@ -90,16 +120,29 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _timer?.cancel();
+    settings.removeListener(_settingsChanged);
     super.dispose();
   }
 
-  /// On startup: load saved settings first, then fetch the weather.
+  /// On startup: saved choices first, then the offline copy so something
+  /// shows straight away, then fresh data.
   Future<void> _start() async {
-    await _loadSettings();
+    await _loadSavedChoices();
+    await _showOfflineCopy();
+    if (settings.value.startAtMyLocation) {
+      try {
+        final here = await locateMe();
+        if (mounted) setState(() => _place = here);
+      } catch (_) {
+        // Fall back to the last place quietly; the search page explains
+        // location problems when someone asks for them directly.
+      }
+    }
     await _load();
+    _checkForUpdate();
   }
 
-  Future<void> _loadSettings() async {
+  Future<void> _loadSavedChoices() async {
     try {
       final prefs = SharedPreferencesAsync();
       final savedPlace = await prefs.getString('place');
@@ -119,11 +162,32 @@ class _HomePageState extends State<HomePage> {
         }
       });
     } catch (_) {
-      // If the saved settings can't be read, just keep the defaults.
+      // If the saved choices can't be read, just keep the defaults.
     }
   }
 
-  /// Saves one setting. If saving fails, the app carries on without it.
+  /// Shows the last forecast that was saved, if it's for the same place and
+  /// units, while fresh data loads.
+  Future<void> _showOfflineCopy() async {
+    final cached = await loadForecast();
+    if (cached == null || !mounted || _report != null) return;
+    if (!cached.place.sameAs(_place) || cached.fahrenheit != _fahrenheit) return;
+    try {
+      final report = parseForecast(
+        cached.json,
+        fahrenheit: cached.fahrenheit,
+        windUnit: cached.windUnit,
+      );
+      setState(() {
+        _report = report;
+        _reportPlace = _place;
+      });
+    } catch (_) {
+      // A damaged copy is simply ignored.
+    }
+  }
+
+  /// Saves one choice. If saving fails, the app carries on without it.
   Future<void> _save(Future<void> Function(SharedPreferencesAsync prefs) write) async {
     try {
       await write(SharedPreferencesAsync());
@@ -132,32 +196,51 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _settingsChanged() {
+    // A new wind unit needs new data; other settings only need a redraw.
+    if (settings.value.windUnit != _windUnit) {
+      _load();
+    } else {
+      setState(() {});
+    }
+  }
+
   /// Fetches the weather for the chosen place and units. Whatever is on
   /// screen stays there until the new answer arrives.
   Future<void> _load() async {
     final id = ++_requestId;
     final place = _place;
+    final fahrenheit = _fahrenheit;
+    final windUnit = settings.value.windUnit;
     setState(() {
       _loading = true;
       _error = null;
       _modelsError = null;
       _airError = null;
     });
-    _loadModels(id, place);
-    _loadAir(id, place);
+    _loadExtras(id, place, fahrenheit);
 
     try {
-      final report = await fetchWeather(
+      final json = await fetchForecastJson(
         place.latitude,
         place.longitude,
-        fahrenheit: _fahrenheit,
+        fahrenheit: fahrenheit,
+        windUnit: windUnit,
       );
+      final report = parseForecast(json, fahrenheit: fahrenheit, windUnit: windUnit);
       if (!mounted || id != _requestId) return;
       setState(() {
         _report = report;
         _reportPlace = place;
+        _windUnit = windUnit;
         _loading = false;
       });
+      saveForecast(CachedForecast(
+        place: place,
+        fahrenheit: fahrenheit,
+        windUnit: windUnit,
+        json: json,
+      ));
     } catch (e) {
       if (!mounted || id != _requestId) return;
       setState(() {
@@ -167,35 +250,66 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<void> _loadModels(int id, Place place) async {
-    try {
-      final models = await fetchModelComparison(
-        place.latitude,
-        place.longitude,
-        fahrenheit: _fahrenheit,
-      );
-      if (!mounted || id != _requestId) return;
-      setState(() {
-        _models = models;
+  /// Starts every extra at once. Each one updates the screen when it's ready.
+  void _loadExtras(int id, Place place, bool fahrenheit) {
+    final lat = place.latitude, lon = place.longitude;
+
+    // Runs [update] only if this is still the newest request.
+    void ifCurrent(VoidCallback update) {
+      if (mounted && id == _requestId) setState(update);
+    }
+
+    fetchModelComparison(lat, lon, fahrenheit: fahrenheit).then(
+      (m) => ifCurrent(() {
+        _models = m;
         _modelsPlace = place;
-      });
-    } catch (e) {
-      if (!mounted || id != _requestId) return;
-      setState(() => _modelsError = friendlyError(e));
+      }),
+      onError: (Object e) => ifCurrent(() => _modelsError = friendlyError(e)),
+    );
+
+    fetchAirQuality(lat, lon).then(
+      (a) => ifCurrent(() {
+        _air = a;
+        _airPlace = place;
+      }),
+      onError: (Object e) => ifCurrent(() => _airError = friendlyError(e)),
+    );
+
+    // Without normals, alerts or the aurora outlook, those parts are simply
+    // left out, so their errors are ignored.
+    fetchNormals(lat, lon, DateTime.now(), fahrenheit: fahrenheit).then(
+      (n) => ifCurrent(() {
+        _normals = n;
+        _normalsPlace = place;
+      }),
+      onError: (Object _) {},
+    );
+
+    fetchAlerts(lat, lon).then(
+      (a) => ifCurrent(() {
+        _alerts = a;
+        _alertsPlace = place;
+      }),
+      onError: (Object _) {},
+    );
+
+    if (auroraRelevant(lat, lon)) {
+      fetchAuroraOutlook(lat, lon).then(
+        (a) => ifCurrent(() {
+          _aurora = a;
+          _auroraPlace = place;
+        }),
+        onError: (Object _) {},
+      );
     }
   }
 
-  Future<void> _loadAir(int id, Place place) async {
+  Future<void> _checkForUpdate() async {
     try {
-      final air = await fetchAirQuality(place.latitude, place.longitude);
-      if (!mounted || id != _requestId) return;
-      setState(() {
-        _air = air;
-        _airPlace = place;
-      });
-    } catch (e) {
-      if (!mounted || id != _requestId) return;
-      setState(() => _airError = friendlyError(e));
+      final update = await checkForUpdate();
+      if (update != null && mounted) setState(() => _update = update);
+    } catch (_) {
+      // Checking for updates is a nicety; failures stay quiet.
     }
   }
 
@@ -239,6 +353,43 @@ class _HomePageState extends State<HomePage> {
     _choosePlace(picked);
   }
 
+  Future<void> _toggleMini() async {
+    final on = !_mini;
+    setState(() => _mini = on);
+    await setMiniWindow(on);
+  }
+
+  void _showMessage(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _onMenu(SkyMenuAction action) async {
+    switch (action) {
+      case SkyMenuAction.copyImage:
+        try {
+          await copyImage(_skyKey);
+          _showMessage('Copied. Paste it into a chat or document.');
+        } catch (_) {
+          _showMessage("Couldn't copy the picture.");
+        }
+      case SkyMenuAction.saveImage:
+        try {
+          final name = 'Weather ${_shownPlace.name}.png';
+          if (await saveImage(_skyKey, name)) _showMessage('Picture saved.');
+        } catch (_) {
+          _showMessage("Couldn't save the picture.");
+        }
+      case SkyMenuAction.miniMode:
+        await _toggleMini();
+      case SkyMenuAction.settings:
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute(builder: (_) => const SettingsPage()),
+        );
+    }
+  }
+
   Future<void> _openLink(String url) async {
     var opened = false;
     try {
@@ -246,35 +397,43 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       opened = false;
     }
-    if (!opened && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Couldn't open $url")),
-      );
-    }
+    if (!opened && mounted) _showMessage("Couldn't open $url");
   }
 
   @override
   Widget build(BuildContext context) {
     final report = _report;
+    final shown = _shownPlace;
 
-    // Only show a comparison that matches the place and units on screen.
+    // Only show extras that match the place (and units) on screen.
+    bool matches(Place? p) => identical(p, _reportPlace);
     final models = _models;
     final modelsMatch = report != null &&
         models != null &&
-        identical(_modelsPlace, _reportPlace) &&
+        matches(_modelsPlace) &&
         models.tempUnit == report.tempUnit;
-    final air = identical(_airPlace, _reportPlace) ? _air : null;
-    final shown = _shownPlace;
+    final fahrenheitShown = report?.tempUnit == '°F';
 
-    // Keyboard shortcuts: F5 or Ctrl+R refreshes, Ctrl+F finds a city,
-    // Ctrl+D saves or removes the place on screen.
+    final shortcuts = <ShortcutActivator, VoidCallback>{
+      const SingleActivator(LogicalKeyboardKey.f5): _load,
+      const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
+      const SingleActivator(LogicalKeyboardKey.keyF, control: true): _openSearch,
+      const SingleActivator(LogicalKeyboardKey.keyD, control: true): _toggleFavourite,
+      const SingleActivator(LogicalKeyboardKey.keyM, control: true): _toggleMini,
+    };
+
+    if (_mini) {
+      return CallbackShortcuts(
+        bindings: shortcuts,
+        child: Focus(
+          autofocus: true,
+          child: MiniView(placeLabel: shown.label, report: report, onExit: _toggleMini),
+        ),
+      );
+    }
+
     return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyD, control: true): _toggleFavourite,
-        const SingleActivator(LogicalKeyboardKey.f5): _load,
-        const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
-        const SingleActivator(LogicalKeyboardKey.keyF, control: true): _openSearch,
-      },
+      bindings: shortcuts,
       child: Focus(
         autofocus: true,
         child: Scaffold(
@@ -283,30 +442,45 @@ class _HomePageState extends State<HomePage> {
               SingleChildScrollView(
                 child: Column(
                   children: [
-                    SkyHeader(
-                      placeLabel: shown.label,
-                      report: report,
-                      fahrenheit: _fahrenheit,
-                      errorMessage: _error,
-                      onSearch: _openSearch,
-                      onToggleUnits: _toggleUnits,
-                      onRefresh: _load,
-                      favourites: _favourites,
-                      currentPlace: shown,
-                      isFavourite: _favourites.any((f) => f.sameAs(shown)),
-                      onToggleFavourite: _toggleFavourite,
-                      onChoosePlace: _choosePlace,
+                    RepaintBoundary(
+                      key: _skyKey,
+                      child: SkyHeader(
+                        placeLabel: shown.label,
+                        report: report,
+                        fahrenheit: _fahrenheit,
+                        errorMessage: _error,
+                        onSearch: _openSearch,
+                        onToggleUnits: _toggleUnits,
+                        onRefresh: _load,
+                        favourites: _favourites,
+                        currentPlace: shown,
+                        isFavourite: _favourites.any((f) => f.sameAs(shown)),
+                        onToggleFavourite: _toggleFavourite,
+                        onChoosePlace: _choosePlace,
+                        alerts: matches(_alertsPlace) ? _alerts : const [],
+                        update: _update,
+                        onMenu: _onMenu,
+                        onOpenLink: _openLink,
+                      ),
                     ),
                     if (report != null)
                       GroundSections(
                         report: report,
-                        fahrenheit: report.tempUnit == '°F',
+                        fahrenheit: fahrenheitShown,
+                        insights: InsightsSection(
+                          report: report,
+                          fahrenheit: fahrenheitShown,
+                          normals: matches(_normalsPlace) ? _normals : null,
+                          aurora: matches(_auroraPlace) ? _aurora : null,
+                          southern: shown.latitude < 0,
+                        ),
+                        radar: RadarSection(place: shown, onOpenLink: _openLink),
                         comparison: ModelComparisonSection(
                           comparison: modelsMatch ? models : null,
                           error: _modelsError,
                           onRetry: _load,
                         ),
-                        air: air,
+                        air: matches(_airPlace) ? _air : null,
                         airError: _airError,
                         onOpenLink: _openLink,
                       ),

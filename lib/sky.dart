@@ -2,9 +2,16 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'alerts.dart';
+import 'moon.dart';
 import 'places.dart';
+import 'sky_animation.dart';
 import 'theme.dart';
+import 'updates.dart';
 import 'weather.dart';
+
+/// The things in the sky's ⋮ menu.
+enum SkyMenuAction { copyImage, saveImage, miniMode, settings }
 
 /// The top of the screen: a sky whose colours follow the real weather, with
 /// the place, the current temperature, and the sun's path along the horizon.
@@ -23,8 +30,16 @@ class SkyHeader extends StatelessWidget {
     required this.isFavourite,
     required this.onToggleFavourite,
     required this.onChoosePlace,
+    required this.alerts,
+    required this.update,
+    required this.onMenu,
+    required this.onOpenLink,
   });
 
+  final List<WeatherAlert> alerts;
+  final UpdateInfo? update;
+  final void Function(SkyMenuAction action) onMenu;
+  final void Function(String url) onOpenLink;
   final List<Place> favourites;
   final Place currentPlace;
   final bool isFavourite;
@@ -60,58 +75,86 @@ class SkyHeader extends StatelessWidget {
       ),
       // A see-through Material lets buttons in the sky show their hover and
       // click effects on top of the gradient.
-      child: Material(
-        type: MaterialType.transparency,
-        child: IconTheme.merge(
-          data: const IconThemeData(color: Colors.white),
-          child: DefaultTextStyle.merge(
-            style: const TextStyle(color: Colors.white),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1080),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 20, 28, 0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _TopBar(
-                        placeLabel: placeLabel,
-                        fahrenheit: fahrenheit,
-                        onSearch: onSearch,
-                        onToggleUnits: onToggleUnits,
-                        onRefresh: onRefresh,
-                        isFavourite: isFavourite,
-                        onToggleFavourite: onToggleFavourite,
-                      ),
-                      if (favourites.isNotEmpty) ...[
-                        const SizedBox(height: 10),
-                        _FavouriteChips(
-                          favourites: favourites,
-                          current: currentPlace,
-                          onChoose: onChoosePlace,
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      if (report == null)
-                        _Waiting(errorMessage: errorMessage, onRetry: onRefresh)
-                      else ...[
-                        _Conditions(report: report),
-                        if (errorMessage != null)
-                          _StaleNotice(
-                            message: errorMessage!,
-                            updated: report.current.time,
-                            onRetry: onRefresh,
+      child: Stack(
+        children: [
+          if (report != null)
+            Positioned.fill(
+              child: SkyAnimation(
+                weatherCode: report.current.weatherCode,
+                isDay: report.current.isDay,
+              ),
+            ),
+          Material(
+            type: MaterialType.transparency,
+            child: IconTheme.merge(
+              data: const IconThemeData(color: Colors.white),
+              child: DefaultTextStyle.merge(
+                style: const TextStyle(color: Colors.white),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1080),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(28, 20, 28, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _TopBar(
+                            placeLabel: placeLabel,
+                            fahrenheit: fahrenheit,
+                            onSearch: onSearch,
+                            onToggleUnits: onToggleUnits,
+                            onRefresh: onRefresh,
+                            isFavourite: isFavourite,
+                            onToggleFavourite: onToggleFavourite,
+                            onMenu: onMenu,
                           ),
-                        const SizedBox(height: 28),
-                        _SunHorizon(report: report),
-                      ],
-                    ],
+                          if (update != null)
+                            _Banner(
+                              icon: Icons.system_update_alt,
+                              colour: Colors.white,
+                              text: 'Weather Dash ${update!.version} is available.',
+                              action: 'Download',
+                              onTap: () => onOpenLink(update!.url),
+                            ),
+                          for (final alert in alerts)
+                            _Banner(
+                              icon: Icons.warning_amber_rounded,
+                              colour: alert.displayColor,
+                              text: alert.area.isEmpty ? alert.name : '${alert.name} for ${alert.area}',
+                              action: 'Details',
+                              onTap: () => _showAlert(context, alert, onOpenLink),
+                            ),
+                          if (favourites.isNotEmpty) ...[
+                            const SizedBox(height: 10),
+                            _FavouriteChips(
+                              favourites: favourites,
+                              current: currentPlace,
+                              onChoose: onChoosePlace,
+                            ),
+                          ],
+                          const SizedBox(height: 20),
+                          if (report == null)
+                            _Waiting(errorMessage: errorMessage, onRetry: onRefresh)
+                          else ...[
+                            _Conditions(report: report),
+                            if (errorMessage != null)
+                              _StaleNotice(
+                                message: errorMessage!,
+                                updated: report.current.time,
+                                onRetry: onRefresh,
+                              ),
+                            const SizedBox(height: 28),
+                            _SunHorizon(report: report),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -126,10 +169,12 @@ class _TopBar extends StatelessWidget {
     required this.onRefresh,
     required this.isFavourite,
     required this.onToggleFavourite,
+    required this.onMenu,
   });
 
   final bool isFavourite;
   final VoidCallback onToggleFavourite;
+  final void Function(SkyMenuAction action) onMenu;
 
   final String placeLabel;
   final bool fahrenheit;
@@ -192,9 +237,114 @@ class _TopBar extends StatelessWidget {
           tooltip: 'Refresh (F5)',
           onPressed: onRefresh,
         ),
+        PopupMenuButton<SkyMenuAction>(
+          icon: const Icon(Icons.more_vert, color: Colors.white),
+          tooltip: 'More',
+          onSelected: onMenu,
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: SkyMenuAction.copyImage,
+              child: ListTile(leading: Icon(Icons.copy), title: Text('Copy as image')),
+            ),
+            PopupMenuItem(
+              value: SkyMenuAction.saveImage,
+              child: ListTile(leading: Icon(Icons.image_outlined), title: Text('Save as image…')),
+            ),
+            PopupMenuItem(
+              value: SkyMenuAction.miniMode,
+              child: ListTile(
+                leading: Icon(Icons.picture_in_picture_alt_outlined),
+                title: Text('Mini mode'),
+                subtitle: Text('Ctrl+M'),
+              ),
+            ),
+            PopupMenuDivider(),
+            PopupMenuItem(
+              value: SkyMenuAction.settings,
+              child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('Settings')),
+            ),
+          ],
+        ),
       ],
     );
   }
+}
+
+/// A one-line notice in the sky, with a coloured edge and a button.
+class _Banner extends StatelessWidget {
+  const _Banner({
+    required this.icon,
+    required this.colour,
+    required this.text,
+    required this.action,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color colour;
+  final String text;
+  final String action;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(10),
+        border: Border(left: BorderSide(color: colour, width: 4)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: colour),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+          ),
+          TextButton(
+            onPressed: onTap,
+            style: TextButton.styleFrom(foregroundColor: Colors.white),
+            child: Text(action),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _showAlert(BuildContext context, WeatherAlert alert, void Function(String url) onOpenLink) {
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      icon: Icon(Icons.warning_amber_rounded, color: alert.displayColor, size: 36),
+      title: Text(alert.name),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (alert.area.isNotEmpty) Text(alert.area, style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (alert.expires != null)
+                Text('In effect until ${hoursMinutes(alert.expires!)} on ${alert.expires!.month}/${alert.expires!.day}.'),
+              const SizedBox(height: 12),
+              Text(alert.text.isEmpty ? 'No further details were given.' : alert.text),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => onOpenLink('https://weather.gc.ca/warnings/index_e.html'),
+          child: const Text('Open Environment Canada'),
+        ),
+        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+      ],
+    ),
+  );
 }
 
 /// Saved places as small buttons under the place name. The one on screen is
@@ -446,6 +596,7 @@ class _SunHorizon extends StatelessWidget {
     final sunrise = today?.sunrise;
     final sunset = today?.sunset;
     const labelStyle = TextStyle(fontSize: 15, fontWeight: FontWeight.w500);
+    final moon = MoonPhase.at(DateTime.now());
 
     // A line in the middle saying what the sun does next.
     String? next;
@@ -485,12 +636,25 @@ class _SunHorizon extends StatelessWidget {
           if (next != null)
             Align(
               alignment: Alignment.topCenter,
-              child: Text(
-                next,
-                style: TextStyle(
-                  fontSize: 15,
-                  color: Colors.white.withValues(alpha: 0.85),
-                ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // At night, the moon's current phase sits beside the label.
+                  if (!report.current.isDay) ...[
+                    Tooltip(
+                      message: '${moon.name}, ${(moon.illumination * 100).round()}% lit',
+                      child: MoonPicture(phase: moon, size: 18),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  Text(
+                    next,
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Colors.white.withValues(alpha: 0.85),
+                    ),
+                  ),
+                ],
               ),
             ),
           if (sunset != null)

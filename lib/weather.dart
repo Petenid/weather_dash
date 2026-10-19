@@ -139,10 +139,16 @@ class WeatherReport {
 
 /// Asks Open-Meteo for current conditions and 7 days of hourly and daily
 /// forecasts.
-Future<WeatherReport> fetchWeather(
+/// Wind speed units Open-Meteo understands, and how we label them.
+const windUnits = {'kmh': 'km/h', 'ms': 'm/s', 'mph': 'mph', 'kn': 'knots'};
+
+/// Downloads the forecast as JSON text. Kept separate from reading it, so
+/// the text can be saved and shown again when there's no internet.
+Future<String> fetchForecastJson(
   double lat,
   double lon, {
   bool fahrenheit = false,
+  String windUnit = 'kmh',
 }) async {
   final uri = Uri.https('api.open-meteo.com', '/v1/forecast', {
     'latitude': '$lat',
@@ -156,8 +162,8 @@ Future<WeatherReport> fetchWeather(
         'wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset,uv_index_max',
     'forecast_days': '7',
     'timezone': 'auto',
+    'wind_speed_unit': windUnit,
     if (fahrenheit) 'temperature_unit': 'fahrenheit',
-    if (fahrenheit) 'wind_speed_unit': 'mph',
     if (fahrenheit) 'precipitation_unit': 'inch',
   });
 
@@ -165,10 +171,18 @@ Future<WeatherReport> fetchWeather(
   if (response.statusCode != 200) {
     throw Exception('Open-Meteo returned error ${response.statusCode}.');
   }
+  return response.body;
+}
 
+/// Turns the forecast JSON text into a [WeatherReport].
+WeatherReport parseForecast(
+  String json, {
+  required bool fahrenheit,
+  required String windUnit,
+}) {
   final Map<String, dynamic> data;
   try {
-    data = jsonDecode(response.body) as Map<String, dynamic>;
+    data = jsonDecode(json) as Map<String, dynamic>;
   } on FormatException {
     throw Exception('Open-Meteo had a temporary problem.');
   }
@@ -221,7 +235,7 @@ Future<WeatherReport> fetchWeather(
     allHours: hours,
     daily: days,
     tempUnit: fahrenheit ? '°F' : '°C',
-    windUnit: fahrenheit ? 'mph' : 'km/h',
+    windUnit: windUnits[windUnit] ?? windUnit,
     precipUnit: fahrenheit ? 'in' : 'mm',
   );
 }
@@ -308,6 +322,15 @@ String uvLevel(double uv) {
 /// A rounded temperature like "−3°", using a proper minus sign.
 String degrees(double value) => '${value.round()}°'.replaceFirst('-', '−');
 
-/// "07:05" style time.
-String hoursMinutes(DateTime t) =>
-    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+/// Whether times show as "13:05" (true) or "1:05 pm" (false). Set from the
+/// settings screen.
+bool use24HourClock = true;
+
+/// A time of day, in the clock style chosen in settings.
+String hoursMinutes(DateTime t) {
+  final mm = t.minute.toString().padLeft(2, '0');
+  if (use24HourClock) return '${t.hour.toString().padLeft(2, '0')}:$mm';
+  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
+  final suffix = t.hour < 12 ? 'am' : 'pm';
+  return mm == '00' ? '$h $suffix' : '$h:$mm $suffix';
+}

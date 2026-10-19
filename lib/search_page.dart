@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'location.dart';
 import 'places.dart';
 
 class CitySearchPage extends StatefulWidget {
@@ -12,6 +13,26 @@ class CitySearchPage extends StatefulWidget {
 class _CitySearchPageState extends State<CitySearchPage> {
   final _controller = TextEditingController();
   Future<List<Place>>? _results;
+  bool _locating = false;
+  String? _locationError;
+
+  Future<void> _useMyLocation() async {
+    setState(() {
+      _locating = true;
+      _locationError = null;
+    });
+    try {
+      final here = await locateMe();
+      if (!mounted) return;
+      Navigator.pop(context, here);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _locating = false;
+        _locationError = e.toString().replaceFirst('Exception: ', '');
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -51,7 +72,30 @@ class _CitySearchPageState extends State<CitySearchPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: _locating ? null : _useMyLocation,
+                icon: _locating
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.my_location),
+                label: Text(_locating ? 'Finding you…' : 'Use my location'),
+              ),
+            ),
+            if (_locationError != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _locationError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 8),
             Expanded(child: _buildResults()),
           ],
         ),
