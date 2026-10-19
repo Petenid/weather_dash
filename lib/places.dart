@@ -38,6 +38,11 @@ class Place {
         'longitude': longitude,
       };
 
+  /// True if this is the same spot as [other] (within about a kilometre).
+  bool sameAs(Place other) =>
+      (latitude - other.latitude).abs() < 0.01 &&
+      (longitude - other.longitude).abs() < 0.01;
+
   /// Short name for the dashboard, e.g. "North Bay, Ontario".
   String get label {
     final r = region;

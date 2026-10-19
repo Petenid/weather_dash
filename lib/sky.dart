@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'places.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -17,8 +18,18 @@ class SkyHeader extends StatelessWidget {
     required this.onSearch,
     required this.onToggleUnits,
     required this.onRefresh,
+    required this.favourites,
+    required this.currentPlace,
+    required this.isFavourite,
+    required this.onToggleFavourite,
+    required this.onChoosePlace,
   });
 
+  final List<Place> favourites;
+  final Place currentPlace;
+  final bool isFavourite;
+  final VoidCallback onToggleFavourite;
+  final void Function(Place place) onChoosePlace;
   final String placeLabel;
   final WeatherReport? report;
   final bool fahrenheit;
@@ -69,7 +80,17 @@ class SkyHeader extends StatelessWidget {
                         onSearch: onSearch,
                         onToggleUnits: onToggleUnits,
                         onRefresh: onRefresh,
+                        isFavourite: isFavourite,
+                        onToggleFavourite: onToggleFavourite,
                       ),
+                      if (favourites.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        _FavouriteChips(
+                          favourites: favourites,
+                          current: currentPlace,
+                          onChoose: onChoosePlace,
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       if (report == null)
                         _Waiting(errorMessage: errorMessage, onRetry: onRefresh)
@@ -103,7 +124,12 @@ class _TopBar extends StatelessWidget {
     required this.onSearch,
     required this.onToggleUnits,
     required this.onRefresh,
+    required this.isFavourite,
+    required this.onToggleFavourite,
   });
+
+  final bool isFavourite;
+  final VoidCallback onToggleFavourite;
 
   final String placeLabel;
   final bool fahrenheit;
@@ -151,7 +177,13 @@ class _TopBar extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(width: 12),
+        IconButton(
+          icon: Icon(isFavourite ? Icons.star : Icons.star_border),
+          color: isFavourite ? const Color(0xFFFFC34D) : Colors.white,
+          tooltip: isFavourite ? 'Remove from saved places (Ctrl+D)' : 'Save this place (Ctrl+D)',
+          onPressed: onToggleFavourite,
+        ),
+        const SizedBox(width: 8),
         _UnitToggle(fahrenheit: fahrenheit, onToggle: onToggleUnits),
         const SizedBox(width: 4),
         IconButton(
@@ -160,6 +192,54 @@ class _TopBar extends StatelessWidget {
           tooltip: 'Refresh (F5)',
           onPressed: onRefresh,
         ),
+      ],
+    );
+  }
+}
+
+/// Saved places as small buttons under the place name. The one on screen is
+/// filled in.
+class _FavouriteChips extends StatelessWidget {
+  const _FavouriteChips({
+    required this.favourites,
+    required this.current,
+    required this.onChoose,
+  });
+
+  final List<Place> favourites;
+  final Place current;
+  final void Function(Place place) onChoose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final place in favourites)
+          Tooltip(
+            message: place.details.isEmpty ? place.name : '${place.name}, ${place.details}',
+            child: InkWell(
+              onTap: () => onChoose(place),
+              borderRadius: BorderRadius.circular(16),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                decoration: BoxDecoration(
+                  color: place.sameAs(current) ? Colors.white : Colors.transparent,
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.6)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  place.name,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                    color: place.sameAs(current) ? const Color(0xFF13202A) : Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }

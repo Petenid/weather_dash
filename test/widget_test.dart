@@ -1,6 +1,7 @@
 // Small checks for the helper functions. Run them with:  flutter test
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:weather_dash/air_quality.dart';
 import 'package:weather_dash/places.dart';
 import 'package:weather_dash/theme.dart';
 import 'package:weather_dash/weather.dart';
@@ -52,5 +53,58 @@ void main() {
   test('Fahrenheit converts to Celsius for colours', () {
     expect(toCelsius(32, fahrenheit: true), 0);
     expect(toCelsius(10, fahrenheit: false), 10);
+  });
+
+  test('places a few metres apart count as the same place', () {
+    const a = Place(name: 'A', latitude: 46.72, longitude: -79.10);
+    const b = Place(name: 'B', latitude: 46.723, longitude: -79.104);
+    const c = Place(name: 'C', latitude: 46.30, longitude: -79.46);
+    expect(a.sameAs(b), isTrue);
+    expect(a.sameAs(c), isFalse);
+  });
+
+  test('air quality categories', () {
+    expect(aqiLevel(20), 'Good');
+    expect(aqiLevel(75), 'Moderate');
+    expect(aqiLevel(120), 'Unhealthy for sensitive groups');
+    expect(aqiLevel(350), 'Hazardous');
+  });
+
+  test('next 24 hours starts at the current hour', () {
+    final start = DateTime(2026, 10, 18);
+    final hours = [
+      for (var i = 0; i < 72; i++)
+        HourlyPoint(
+          time: start.add(Duration(hours: i)),
+          temperature: i.toDouble(),
+          precipitationChance: 0,
+          precipitation: 0,
+          windSpeed: 0,
+          windGusts: 0,
+          weatherCode: 0,
+          isDay: true,
+        ),
+    ];
+    final report = WeatherReport(
+      current: CurrentWeather(
+        temperature: 0,
+        feelsLike: 0,
+        humidity: 50,
+        windSpeed: 0,
+        windDirection: 0,
+        weatherCode: 0,
+        isDay: true,
+        uvIndex: null,
+        time: DateTime(2026, 10, 18, 20, 30),
+      ),
+      allHours: hours,
+      daily: const [],
+      tempUnit: '°C',
+      windUnit: 'km/h',
+      precipUnit: 'mm',
+    );
+    expect(report.next24Hours.length, 24);
+    expect(report.next24Hours.first.time.hour, 20);
+    expect(report.hoursOn(DateTime(2026, 10, 19)).length, 24);
   });
 }

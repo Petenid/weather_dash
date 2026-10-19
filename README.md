@@ -18,20 +18,23 @@ Requires 64-bit Windows 10 or 11. The app isn't code-signed, so Windows SmartScr
 
 ## What it shows
 
-- Current conditions: temperature, feels-like, wind, humidity and UV index
-- The next 24 hours as a temperature chart
-- A 7-day forecast, with each day's low-to-high range drawn on a shared scale and coloured by temperature
+- Current conditions: temperature, feels-like, wind, humidity, UV index and air quality
+- The next 24 hours as a chart you can switch between temperature, chance of rain or snow, and wind
+- A 7-day forecast, with each day's low-to-high range drawn on a shared scale and coloured by temperature. Click a day for its hour-by-hour details
+- Three national forecast models (Canada's GEM, the US GFS and Europe's ECMWF) compared side by side, with a plain-language note on where they disagree
 - Sunrise, sunset and hours of daylight
-- City search for anywhere in the world
-- °C or °F, remembered between sessions along with your last city
+- City search for anywhere in the world, with saved places one click away
+- °C or °F, remembered between sessions along with your last city and saved places
 - Light and dark mode, following your Windows setting
 - Refreshes itself every 15 minutes
 
-Keyboard shortcuts: **Ctrl+F** finds a city, **F5** or **Ctrl+R** refreshes.
+Keyboard shortcuts: **Ctrl+F** finds a city, **Ctrl+D** saves or removes the place on screen, **F5** or **Ctrl+R** refreshes.
 
 ## Data and credits
 
 - Weather data by [Open-Meteo.com](https://open-meteo.com/), under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- Forecast models: Environment and Climate Change Canada (GEM), NOAA (GFS) and ECMWF (IFS), through Open-Meteo
+- Air quality: [Copernicus Atmosphere Monitoring Service](https://atmosphere.copernicus.eu/) (CAMS), through Open-Meteo's air quality API
 - Place search by [GeoNames](https://www.geonames.org/), through Open-Meteo's geocoding API
 - Typeface: [Barlow](https://github.com/jpt/barlow) by The Barlow Project Authors, under the SIL Open Font License (see `assets/fonts/OFL.txt`)
 

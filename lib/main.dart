@@ -6,7 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'air_quality.dart';
+import 'comparison.dart';
 import 'dashboard.dart';
+import 'models.dart';
 import 'places.dart';
 import 'search_page.dart';
 import 'sky.dart';
@@ -52,6 +55,7 @@ class _HomePageState extends State<HomePage> {
   // What the person has chosen.
   Place _place = _defaultPlace;
   bool _fahrenheit = false;
+  List<Place> _favourites = [];
 
   // What's on screen. The report and the place it belongs to are kept
   // together, so the name at the top always matches the numbers below it,
@@ -60,6 +64,17 @@ class _HomePageState extends State<HomePage> {
   Place _reportPlace = _defaultPlace;
   String? _error;
   bool _loading = true;
+
+  // The forecast-models comparison loads separately, so a slow or failed
+  // comparison never holds up the main forecast.
+  ModelComparison? _models;
+  Place? _modelsPlace;
+  String? _modelsError;
+
+  // Air quality comes from a separate service, so it loads on its own too.
+  AirQuality? _air;
+  Place? _airPlace;
+  String? _airError;
 
   // Counts requests, so a slow old answer can't overwrite a newer one.
   int _requestId = 0;
@@ -89,12 +104,19 @@ class _HomePageState extends State<HomePage> {
       final prefs = SharedPreferencesAsync();
       final savedPlace = await prefs.getString('place');
       final savedFahrenheit = await prefs.getBool('fahrenheit');
+      final savedFavourites = await prefs.getString('favourites');
       if (!mounted) return;
       setState(() {
         if (savedPlace != null) {
           _place = Place.fromJson(jsonDecode(savedPlace) as Map<String, dynamic>);
         }
         _fahrenheit = savedFahrenheit ?? false;
+        if (savedFavourites != null) {
+          _favourites = [
+            for (final f in jsonDecode(savedFavourites) as List)
+              Place.fromJson(f as Map<String, dynamic>),
+          ];
+        }
       });
     } catch (_) {
       // If the saved settings can't be read, just keep the defaults.
@@ -118,7 +140,11 @@ class _HomePageState extends State<HomePage> {
     setState(() {
       _loading = true;
       _error = null;
+      _modelsError = null;
+      _airError = null;
     });
+    _loadModels(id, place);
+    _loadAir(id, place);
 
     try {
       final report = await fetchWeather(
@@ -141,6 +167,63 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _loadModels(int id, Place place) async {
+    try {
+      final models = await fetchModelComparison(
+        place.latitude,
+        place.longitude,
+        fahrenheit: _fahrenheit,
+      );
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _models = models;
+        _modelsPlace = place;
+      });
+    } catch (e) {
+      if (!mounted || id != _requestId) return;
+      setState(() => _modelsError = friendlyError(e));
+    }
+  }
+
+  Future<void> _loadAir(int id, Place place) async {
+    try {
+      final air = await fetchAirQuality(place.latitude, place.longitude);
+      if (!mounted || id != _requestId) return;
+      setState(() {
+        _air = air;
+        _airPlace = place;
+      });
+    } catch (e) {
+      if (!mounted || id != _requestId) return;
+      setState(() => _airError = friendlyError(e));
+    }
+  }
+
+  /// The place whose weather is on screen right now.
+  Place get _shownPlace => _report == null ? _place : _reportPlace;
+
+  void _choosePlace(Place place) {
+    setState(() => _place = place);
+    _save((prefs) => prefs.setString('place', jsonEncode(place.toJson())));
+    _load();
+  }
+
+  /// Saves the place on screen, or removes it if it's already saved.
+  void _toggleFavourite() {
+    final place = _shownPlace;
+    setState(() {
+      if (_favourites.any((f) => f.sameAs(place))) {
+        _favourites = [for (final f in _favourites) if (!f.sameAs(place)) f];
+      } else {
+        // Keep at most 10, dropping the oldest.
+        _favourites = [..._favourites, place];
+        if (_favourites.length > 10) _favourites = _favourites.sublist(1);
+      }
+    });
+    final json = jsonEncode([for (final f in _favourites) f.toJson()]);
+    _save((prefs) => prefs.setString('favourites', json));
+  }
+
   void _toggleUnits() {
     setState(() => _fahrenheit = !_fahrenheit);
     _save((prefs) => prefs.setBool('fahrenheit', _fahrenheit));
@@ -153,9 +236,7 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(builder: (_) => const CitySearchPage()),
     );
     if (picked == null || !mounted) return; // They went back without choosing.
-    setState(() => _place = picked);
-    _save((prefs) => prefs.setString('place', jsonEncode(picked.toJson())));
-    _load();
+    _choosePlace(picked);
   }
 
   Future<void> _openLink(String url) async {
@@ -176,9 +257,20 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final report = _report;
 
-    // Keyboard shortcuts: F5 or Ctrl+R refreshes, Ctrl+F finds a city.
+    // Only show a comparison that matches the place and units on screen.
+    final models = _models;
+    final modelsMatch = report != null &&
+        models != null &&
+        identical(_modelsPlace, _reportPlace) &&
+        models.tempUnit == report.tempUnit;
+    final air = identical(_airPlace, _reportPlace) ? _air : null;
+    final shown = _shownPlace;
+
+    // Keyboard shortcuts: F5 or Ctrl+R refreshes, Ctrl+F finds a city,
+    // Ctrl+D saves or removes the place on screen.
     return CallbackShortcuts(
       bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true): _toggleFavourite,
         const SingleActivator(LogicalKeyboardKey.f5): _load,
         const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
         const SingleActivator(LogicalKeyboardKey.keyF, control: true): _openSearch,
@@ -192,18 +284,30 @@ class _HomePageState extends State<HomePage> {
                 child: Column(
                   children: [
                     SkyHeader(
-                      placeLabel: report == null ? _place.label : _reportPlace.label,
+                      placeLabel: shown.label,
                       report: report,
                       fahrenheit: _fahrenheit,
                       errorMessage: _error,
                       onSearch: _openSearch,
                       onToggleUnits: _toggleUnits,
                       onRefresh: _load,
+                      favourites: _favourites,
+                      currentPlace: shown,
+                      isFavourite: _favourites.any((f) => f.sameAs(shown)),
+                      onToggleFavourite: _toggleFavourite,
+                      onChoosePlace: _choosePlace,
                     ),
                     if (report != null)
                       GroundSections(
                         report: report,
                         fahrenheit: report.tempUnit == '°F',
+                        comparison: ModelComparisonSection(
+                          comparison: modelsMatch ? models : null,
+                          error: _modelsError,
+                          onRetry: _load,
+                        ),
+                        air: air,
+                        airError: _airError,
                         onOpenLink: _openLink,
                       ),
                   ],

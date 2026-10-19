@@ -47,8 +47,23 @@ class CurrentWeather {
 class HourlyPoint {
   final DateTime time;
   final double temperature;
+  final int precipitationChance; // %
+  final double precipitation; // mm (or inches)
+  final double windSpeed;
+  final double windGusts;
+  final int weatherCode;
+  final bool isDay;
 
-  const HourlyPoint({required this.time, required this.temperature});
+  const HourlyPoint({
+    required this.time,
+    required this.temperature,
+    required this.precipitationChance,
+    required this.precipitation,
+    required this.windSpeed,
+    required this.windGusts,
+    required this.weatherCode,
+    required this.isDay,
+  });
 }
 
 /// One day of the daily forecast.
@@ -58,6 +73,10 @@ class DailyForecast {
   final double high;
   final double low;
   final int precipitationChance;
+  final double precipitationTotal;
+  final double windMax;
+  final double gustMax;
+  final int? windDirection;
   final DateTime? sunrise;
   final DateTime? sunset;
   final double? uvMax;
@@ -68,6 +87,10 @@ class DailyForecast {
     required this.high,
     required this.low,
     required this.precipitationChance,
+    required this.precipitationTotal,
+    required this.windMax,
+    required this.gustMax,
+    required this.windDirection,
     required this.sunrise,
     required this.sunset,
     required this.uvMax,
@@ -77,25 +100,45 @@ class DailyForecast {
 /// Everything one request gives us.
 class WeatherReport {
   final CurrentWeather current;
-  final List<HourlyPoint> hourly;
+
+  /// Every hour of the 7 days, starting at midnight today.
+  final List<HourlyPoint> allHours;
   final List<DailyForecast> daily;
   final String tempUnit;
   final String windUnit;
+  final String precipUnit;
 
   const WeatherReport({
     required this.current,
-    required this.hourly,
+    required this.allHours,
     required this.daily,
     required this.tempUnit,
     required this.windUnit,
+    required this.precipUnit,
   });
 
   /// Today's forecast (the first day), or null if the list is empty.
   DailyForecast? get today => daily.isEmpty ? null : daily.first;
+
+  /// The 24 hours starting with the current hour.
+  List<HourlyPoint> get next24Hours {
+    final now = current.time;
+    final thisHour = DateTime(now.year, now.month, now.day, now.hour);
+    final start = allHours.indexWhere((h) => !h.time.isBefore(thisHour));
+    if (start < 0) return const [];
+    final end = start + 24 > allHours.length ? allHours.length : start + 24;
+    return allHours.sublist(start, end);
+  }
+
+  /// The 24 hours of one calendar day.
+  List<HourlyPoint> hoursOn(DateTime day) => [
+        for (final h in allHours)
+          if (h.time.year == day.year && h.time.month == day.month && h.time.day == day.day) h,
+      ];
 }
 
-/// Asks Open-Meteo for current conditions, the next 24 hours,
-/// and a 7-day forecast.
+/// Asks Open-Meteo for current conditions and 7 days of hourly and daily
+/// forecasts.
 Future<WeatherReport> fetchWeather(
   double lat,
   double lon, {
@@ -106,14 +149,16 @@ Future<WeatherReport> fetchWeather(
     'longitude': '$lon',
     'current': 'temperature_2m,apparent_temperature,relative_humidity_2m,'
         'is_day,weather_code,wind_speed_10m,wind_direction_10m,uv_index',
-    'hourly': 'temperature_2m',
-    'forecast_hours': '24',
+    'hourly': 'temperature_2m,precipitation_probability,precipitation,'
+        'wind_speed_10m,wind_gusts_10m,weather_code,is_day',
     'daily': 'weather_code,temperature_2m_max,temperature_2m_min,'
-        'precipitation_probability_max,sunrise,sunset,uv_index_max',
+        'precipitation_probability_max,precipitation_sum,wind_speed_10m_max,'
+        'wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset,uv_index_max',
     'forecast_days': '7',
     'timezone': 'auto',
     if (fahrenheit) 'temperature_unit': 'fahrenheit',
     if (fahrenheit) 'wind_speed_unit': 'mph',
+    if (fahrenheit) 'precipitation_unit': 'inch',
   });
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
@@ -128,51 +173,56 @@ Future<WeatherReport> fetchWeather(
     throw Exception('Open-Meteo had a temporary problem.');
   }
 
-  // Hourly data comes as two lined-up lists: times and temperatures.
+  // Open-Meteo sends each variable as its own list; item i of every list
+  // belongs to the same hour (or day). These helpers read item i safely.
   final hourly = data['hourly'] as Map<String, dynamic>;
-  final hourTimes = hourly['time'] as List;
-  final hourTemps = hourly['temperature_2m'] as List;
+  double num0(Map<String, dynamic> m, String key, int i) =>
+      ((m[key] as List?)?[i] as num?)?.toDouble() ?? 0;
 
+  final hourTimes = hourly['time'] as List;
   final hours = [
     for (var i = 0; i < hourTimes.length; i++)
-      if (hourTemps[i] != null)
+      if ((hourly['temperature_2m'] as List)[i] != null)
         HourlyPoint(
           time: DateTime.parse(hourTimes[i] as String),
-          temperature: (hourTemps[i] as num).toDouble(),
+          temperature: num0(hourly, 'temperature_2m', i),
+          precipitationChance: num0(hourly, 'precipitation_probability', i).round(),
+          precipitation: num0(hourly, 'precipitation', i),
+          windSpeed: num0(hourly, 'wind_speed_10m', i),
+          windGusts: num0(hourly, 'wind_gusts_10m', i),
+          weatherCode: num0(hourly, 'weather_code', i).round(),
+          isDay: num0(hourly, 'is_day', i) == 1,
         ),
   ];
 
-  // Daily data works the same way, with more lists.
   final daily = data['daily'] as Map<String, dynamic>;
   final dates = daily['time'] as List;
-  final codes = daily['weather_code'] as List;
-  final highs = daily['temperature_2m_max'] as List;
-  final lows = daily['temperature_2m_min'] as List;
-  final rainChances = daily['precipitation_probability_max'] as List;
-  final sunrises = daily['sunrise'] as List;
-  final sunsets = daily['sunset'] as List;
-  final uvMaxes = daily['uv_index_max'] as List;
-
   final days = [
     for (var i = 0; i < dates.length; i++)
       DailyForecast(
         date: DateTime.parse(dates[i] as String),
-        weatherCode: (codes[i] as num?)?.toInt() ?? -1,
-        high: (highs[i] as num).toDouble(),
-        low: (lows[i] as num).toDouble(),
-        precipitationChance: (rainChances[i] as num?)?.toInt() ?? 0,
-        sunrise: _parseTime(sunrises[i]),
-        sunset: _parseTime(sunsets[i]),
-        uvMax: (uvMaxes[i] as num?)?.toDouble(),
+        weatherCode: (((daily['weather_code'] as List)[i]) as num?)?.toInt() ?? -1,
+        high: num0(daily, 'temperature_2m_max', i),
+        low: num0(daily, 'temperature_2m_min', i),
+        precipitationChance: num0(daily, 'precipitation_probability_max', i).round(),
+        precipitationTotal: num0(daily, 'precipitation_sum', i),
+        windMax: num0(daily, 'wind_speed_10m_max', i),
+        gustMax: num0(daily, 'wind_gusts_10m_max', i),
+        windDirection:
+            (((daily['wind_direction_10m_dominant'] as List?)?[i]) as num?)?.toInt(),
+        sunrise: _parseTime((daily['sunrise'] as List)[i]),
+        sunset: _parseTime((daily['sunset'] as List)[i]),
+        uvMax: (((daily['uv_index_max'] as List?)?[i]) as num?)?.toDouble(),
       ),
   ];
 
   return WeatherReport(
     current: CurrentWeather.fromJson(data['current'] as Map<String, dynamic>),
-    hourly: hours,
+    allHours: hours,
     daily: days,
     tempUnit: fahrenheit ? '°F' : '°C',
     windUnit: fahrenheit ? 'mph' : 'km/h',
+    precipUnit: fahrenheit ? 'in' : 'mm',
   );
 }
 

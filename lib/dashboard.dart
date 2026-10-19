@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 
-import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
+import 'air_quality.dart';
+import 'day_details.dart';
+import 'hourly_chart.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -13,22 +15,34 @@ class GroundSections extends StatelessWidget {
     super.key,
     required this.report,
     required this.fahrenheit,
+    required this.comparison,
+    required this.air,
+    required this.airError,
     required this.onOpenLink,
   });
 
   final WeatherReport report;
   final bool fahrenheit;
+  final Widget comparison; // The forecast-models section.
+  final AirQuality? air;
+  final String? airError;
   final void Function(String url) onOpenLink;
 
   @override
   Widget build(BuildContext context) {
-    final hourly = HourlySection(hours: report.hourly, tempUnit: report.tempUnit);
+    final hourly = HourlyPanel(
+      title: 'Next 24 hours',
+      hours: report.next24Hours,
+      report: report,
+      startsNow: true,
+    );
     final daily = DailySection(
       days: report.daily,
       currentTemp: report.current.temperature,
       fahrenheit: fahrenheit,
+      onOpenDay: (i) => showDayDetails(context, report, i),
     );
-    final details = DetailsPanel(report: report);
+    final details = DetailsPanel(report: report, air: air, airError: airError);
 
     return Center(
       child: ConstrainedBox(
@@ -63,6 +77,8 @@ class GroundSections extends StatelessWidget {
                     const SizedBox(height: 40),
                     details,
                   ],
+                  const SizedBox(height: 48),
+                  comparison,
                   const SizedBox(height: 40),
                   const Divider(),
                   const SizedBox(height: 12),
@@ -77,143 +93,6 @@ class GroundSections extends StatelessWidget {
   }
 }
 
-/// A line chart of the temperature over the next 24 hours.
-class HourlySection extends StatelessWidget {
-  const HourlySection({super.key, required this.hours, required this.tempUnit});
-
-  final List<HourlyPoint> hours;
-  final String tempUnit;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colors = theme.colorScheme;
-    final muted = TextStyle(color: colors.onSurfaceVariant, fontSize: 14);
-
-    if (hours.isEmpty) return const SizedBox.shrink();
-
-    // Give the line some breathing room above and below.
-    final temps = hours.map((h) => h.temperature);
-    final minY = (temps.reduce(math.min) - 2).floorToDouble();
-    final maxY = (temps.reduce(math.max) + 2).ceilToDouble();
-
-    // One point per hour: x is the hour number (0–23), y is the temperature.
-    final spots = [
-      for (var i = 0; i < hours.length; i++)
-        FlSpot(i.toDouble(), hours[i].temperature),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Next 24 hours', style: theme.textTheme.titleMedium),
-        const SizedBox(height: 20),
-        SizedBox(
-          height: 220,
-          child: LineChart(
-            LineChartData(
-              minY: minY,
-              maxY: maxY,
-              gridData: FlGridData(
-                drawVerticalLine: false,
-                getDrawingHorizontalLine: (_) =>
-                    FlLine(color: colors.outlineVariant, strokeWidth: 1),
-              ),
-              borderData: FlBorderData(show: false),
-              titlesData: FlTitlesData(
-                topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                leftTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 40,
-                    interval: (maxY - minY) <= 12 ? 2 : 5,
-                    getTitlesWidget: (value, meta) {
-                      if (value == meta.min || value == meta.max) {
-                        return const SizedBox.shrink();
-                      }
-                      return Text(degrees(value), style: muted);
-                    },
-                  ),
-                ),
-                bottomTitles: AxisTitles(
-                  sideTitles: SideTitles(
-                    showTitles: true,
-                    reservedSize: 30,
-                    interval: 1,
-                    getTitlesWidget: (value, meta) {
-                      final i = value.toInt();
-                      // Label every third hour so the times don't crowd.
-                      if (i % 3 != 0 || i >= hours.length) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          i == 0 ? 'Now' : hoursMinutes(hours[i].time),
-                          style: muted,
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ),
-              lineTouchData: LineTouchData(
-                touchTooltipData: LineTouchTooltipData(
-                  getTooltipColor: (_) => colors.onSurface,
-                  getTooltipItems: (touchedSpots) => [
-                    for (final spot in touchedSpots)
-                      LineTooltipItem(
-                        '${hoursMinutes(hours[spot.x.toInt()].time)}\n'
-                        '${spot.y.toStringAsFixed(1)}$tempUnit',
-                        TextStyle(
-                          color: colors.surface,
-                          fontFamily: bodyFont,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              lineBarsData: [
-                LineChartBarData(
-                  spots: spots,
-                  isCurved: true,
-                  preventCurveOverShooting: true,
-                  color: colors.primary,
-                  barWidth: 2.5,
-                  // A dot marks "now", at the start of the line.
-                  dotData: FlDotData(
-                    show: true,
-                    checkToShowDot: (spot, _) => spot.x == 0,
-                    getDotPainter: (spot, percent, bar, index) => FlDotCirclePainter(
-                      radius: 5,
-                      color: colors.primary,
-                      strokeWidth: 2.5,
-                      strokeColor: colors.surface,
-                    ),
-                  ),
-                  belowBarData: BarAreaData(
-                    show: true,
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        colors.primary.withValues(alpha: 0.25),
-                        colors.primary.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 /// The week ahead. Each day's bar spans its low to its high on a scale shared
 /// by the whole week, coloured by temperature.
 class DailySection extends StatelessWidget {
@@ -222,11 +101,13 @@ class DailySection extends StatelessWidget {
     required this.days,
     required this.currentTemp,
     required this.fahrenheit,
+    required this.onOpenDay,
   });
 
   final List<DailyForecast> days;
   final double currentTemp;
   final bool fahrenheit;
+  final void Function(int index) onOpenDay;
 
   @override
   Widget build(BuildContext context) {
@@ -240,10 +121,16 @@ class DailySection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('7-day forecast', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 2),
+        Text(
+          'Click a day for hour-by-hour details.',
+          style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant),
+        ),
         const SizedBox(height: 8),
         for (var i = 0; i < days.length; i++) ...[
           if (i > 0) const Divider(),
           _DayRow(
+            onTap: () => onOpenDay(i),
             day: days[i],
             label: i == 0 ? 'Today' : _weekdayName(days[i].date),
             weekLow: weekLow,
@@ -260,6 +147,7 @@ class DailySection extends StatelessWidget {
 
 class _DayRow extends StatelessWidget {
   const _DayRow({
+    required this.onTap,
     required this.day,
     required this.label,
     required this.weekLow,
@@ -268,6 +156,7 @@ class _DayRow extends StatelessWidget {
     required this.fahrenheit,
   });
 
+  final VoidCallback onTap;
   final DailyForecast day;
   final String label;
   final double weekLow;
@@ -279,65 +168,71 @@ class _DayRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
-    return SizedBox(
-      height: 52,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 64,
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        height: 52,
+        child: Row(
+          children: [
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 64,
+              child: Text(
+                label,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              ),
             ),
-          ),
-          SizedBox(
-            width: 40,
-            child: Tooltip(
-              message: describeWeather(day.weatherCode),
-              child: Icon(weatherIcon(day.weatherCode, isDay: true), size: 24),
+            SizedBox(
+              width: 40,
+              child: Tooltip(
+                message: describeWeather(day.weatherCode),
+                child: Icon(weatherIcon(day.weatherCode, isDay: true), size: 24),
+              ),
             ),
-          ),
-          SizedBox(
-            width: 56,
-            // Only mention rain or snow when it's reasonably likely.
-            child: day.precipitationChance >= 10
-                ? Row(
-                    children: [
-                      Icon(Icons.water_drop, size: 13, color: colors.primary),
-                      const SizedBox(width: 2),
-                      Text(
-                        '${day.precipitationChance}%',
-                        style: TextStyle(fontSize: 14, color: colors.primary),
-                      ),
-                    ],
-                  )
-                : null,
-          ),
-          SizedBox(
-            width: 44,
-            child: Text(
-              degrees(day.low),
-              textAlign: TextAlign.right,
-              style: numberStyle(21, color: colors.onSurfaceVariant),
+            SizedBox(
+              width: 56,
+              // Only mention rain or snow when it's reasonably likely.
+              child: day.precipitationChance >= 10
+                  ? Row(
+                      children: [
+                        Icon(Icons.water_drop, size: 13, color: colors.primary),
+                        const SizedBox(width: 2),
+                        Text(
+                          '${day.precipitationChance}%',
+                          style: TextStyle(fontSize: 14, color: colors.primary),
+                        ),
+                      ],
+                    )
+                  : null,
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: _RangeBar(
-              low: day.low,
-              high: day.high,
-              weekLow: weekLow,
-              weekHigh: weekHigh,
-              marker: marker,
-              fahrenheit: fahrenheit,
+            SizedBox(
+              width: 44,
+              child: Text(
+                degrees(day.low),
+                textAlign: TextAlign.right,
+                style: numberStyle(21, color: colors.onSurfaceVariant),
+              ),
             ),
-          ),
-          const SizedBox(width: 14),
-          SizedBox(
-            width: 44,
-            child: Text(degrees(day.high), style: numberStyle(21, weight: FontWeight.w600)),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: _RangeBar(
+                low: day.low,
+                high: day.high,
+                weekLow: weekLow,
+                weekHigh: weekHigh,
+                marker: marker,
+                fahrenheit: fahrenheit,
+              ),
+            ),
+            const SizedBox(width: 14),
+            SizedBox(
+              width: 44,
+              child: Text(degrees(day.high), style: numberStyle(21, weight: FontWeight.w600)),
+            ),
+            Icon(Icons.chevron_right, size: 20, color: colors.onSurfaceVariant),
+          ],
+        ),
       ),
     );
   }
@@ -427,9 +322,16 @@ class _RangeBar extends StatelessWidget {
 
 /// The smaller numbers: wind, humidity, UV and daylight.
 class DetailsPanel extends StatelessWidget {
-  const DetailsPanel({super.key, required this.report});
+  const DetailsPanel({
+    super.key,
+    required this.report,
+    required this.air,
+    required this.airError,
+  });
 
   final WeatherReport report;
+  final AirQuality? air; // Null while loading or if it failed.
+  final String? airError;
 
   @override
   Widget build(BuildContext context) {
@@ -441,6 +343,8 @@ class DetailsPanel extends StatelessWidget {
     final sunset = today?.sunset;
     final uv = now.uvIndex;
     final uvMax = today?.uvMax;
+    final aqi = air?.usAqi;
+    final pm25 = air?.pm25;
 
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
@@ -472,6 +376,31 @@ class DetailsPanel extends StatelessWidget {
           _DetailRow(
             label: 'Humidity',
             value: Text('${now.humidity}%', style: numberStyle(22)),
+          ),
+          _DetailRow(
+            label: 'Air quality',
+            note: aqi != null
+                ? '${aqiLevel(aqi)}${pm25 == null ? '' : ', fine particles ${pm25.round()} µg/m³'}'
+                : airError != null
+                    ? 'Unavailable right now'
+                    : 'Loading…',
+            value: aqi == null
+                ? Text('–', style: numberStyle(22))
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(shape: BoxShape.circle, color: aqiColor(aqi)),
+                      ),
+                      const SizedBox(width: 8),
+                      Tooltip(
+                        message: 'US Air Quality Index, 0 to 500. Lower is better.',
+                        child: Text('$aqi', style: numberStyle(22)),
+                      ),
+                    ],
+                  ),
           ),
           _DetailRow(
             label: 'UV index',
@@ -590,6 +519,8 @@ class _Credits extends StatelessWidget {
         link('Open-Meteo.com', 'https://open-meteo.com/'),
         Text('. Place search by ', style: plain),
         link('GeoNames', 'https://www.geonames.org/'),
+        Text('. Air quality from the ', style: plain),
+        link('Copernicus Atmosphere Monitoring Service', 'https://atmosphere.copernicus.eu/'),
         Text('.', style: plain),
       ],
     );
