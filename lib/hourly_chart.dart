@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import 'theme.dart';
 import 'weather.dart';
+import 'strings.dart';
 
 /// What the hourly chart is showing.
 enum ChartView { temperature, precipitation, wind }
@@ -38,8 +39,10 @@ class _HourlyPanelState extends State<HourlyPanel> {
     final hours = widget.hours;
     if (hours.isEmpty) return const SizedBox.shrink();
 
+    final compact = MediaQuery.sizeOf(context).width < 520;
+
     String label(int i) =>
-        i == 0 && widget.startsNow ? 'Now' : hoursMinutes(hours[i].time);
+        i == 0 && widget.startsNow ? t.now : hoursMinutes(hours[i].time);
 
     final chart = switch (_view) {
       ChartView.temperature =>
@@ -47,7 +50,7 @@ class _HourlyPanelState extends State<HourlyPanel> {
       ChartView.precipitation =>
         _PrecipitationChart(hours: hours, unit: widget.report.precipUnit, label: label),
       ChartView.wind =>
-        _WindChart(hours: hours, unit: widget.report.windUnit, label: label),
+        _WindChart(hours: hours, unit: widget.report.windLabel, label: label),
     };
 
     return Column(
@@ -63,10 +66,20 @@ class _HourlyPanelState extends State<HourlyPanel> {
             SegmentedButton<ChartView>(
               showSelectedIcon: false,
               style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: const [
-                ButtonSegment(value: ChartView.temperature, label: Text('Temperature')),
-                ButtonSegment(value: ChartView.precipitation, label: Text('Precipitation')),
-                ButtonSegment(value: ChartView.wind, label: Text('Wind')),
+              // On a narrow screen the buttons show icons only; hovering or
+              // long-pressing shows the name.
+              segments: [
+                for (final (view, icon, name) in [
+                  (ChartView.temperature, Icons.thermostat, t.temperature),
+                  (ChartView.precipitation, Icons.water_drop_outlined, t.precipitation),
+                  (ChartView.wind, Icons.air, t.wind),
+                ])
+                  ButtonSegment(
+                    value: view,
+                    icon: compact ? Icon(icon) : null,
+                    label: compact ? null : Text(name),
+                    tooltip: compact ? name : null,
+                  ),
               ],
               selected: {_view},
               onSelectionChanged: (choice) => setState(() => _view = choice.first),
@@ -176,7 +189,7 @@ class _TemperatureChart extends StatelessWidget {
               for (final s in spots)
                 LineTooltipItem(
                   '${hoursMinutes(hours[s.x.toInt()].time)}\n'
-                  '${s.y.toStringAsFixed(1)}$unit',
+                  '${t.decimal(s.y, 1)}$unit',
                   _tooltipStyle(context, bold: true),
                 ),
             ],
@@ -238,7 +251,7 @@ class _PrecipitationChart extends StatelessWidget {
                 titlesData: FlTitlesData(
                   topTitles: _noTitles,
                   rightTitles: _noTitles,
-                  leftTitles: _valueAxis(context, 25, (v) => '${v.round()}%'),
+                  leftTitles: _valueAxis(context, 25, (v) => t.percent(v)),
                   bottomTitles: _timeAxis(context, hours.length, label),
                 ),
                 barTouchData: BarTouchData(
@@ -248,15 +261,13 @@ class _PrecipitationChart extends StatelessWidget {
                     fitInsideVertically: true,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       final h = hours[group.x];
-                      final amount = unit == 'in'
-                          ? h.precipitation.toStringAsFixed(2)
-                          : h.precipitation.toStringAsFixed(1);
+                      final amount = t.decimal(h.precipitation, unit == 'in' ? 2 : 1);
                       return BarTooltipItem(
                         '${hoursMinutes(h.time)}\n',
                         _tooltipStyle(context, bold: true),
                         children: [
                           TextSpan(
-                            text: '${h.precipitationChance}% chance\n$amount $unit expected',
+                            text: t.precipTooltip(t.percent(h.precipitationChance), '$amount $unit'),
                             style: _tooltipStyle(context),
                           ),
                         ],
@@ -286,7 +297,7 @@ class _PrecipitationChart extends StatelessWidget {
           Align(
             alignment: const Alignment(0, -0.2),
             child: Text(
-              'No rain or snow expected',
+              t.noPrecipExpected,
               style: TextStyle(fontSize: 16, color: colors.onSurfaceVariant),
             ),
           ),
@@ -329,11 +340,11 @@ class _WindChart extends StatelessWidget {
           children: [
             _LineSample(color: colors.primary, dashed: false),
             const SizedBox(width: 6),
-            const Text('Wind'),
+            Text(t.wind),
             const SizedBox(width: 20),
             _LineSample(color: colors.primary.withValues(alpha: 0.75), dashed: true),
             const SizedBox(width: 6),
-            const Text('Gusts'),
+            Text(t.gusts),
           ],
         ),
         const SizedBox(height: 8),
@@ -359,8 +370,8 @@ class _WindChart extends StatelessWidget {
                       LineTooltipItem(
                         s.barIndex == 0
                             ? '${hoursMinutes(hours[s.x.toInt()].time)}\n'
-                                'Wind ${s.y.round()} $unit'
-                            : 'Gusts ${s.y.round()} $unit',
+                                '${t.wind} ${s.y.round()} $unit'
+                            : '${t.gusts} ${s.y.round()} $unit',
                         _tooltipStyle(context, bold: s.barIndex == 0),
                       ),
                   ],

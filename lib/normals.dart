@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'strings.dart';
 
 /// What's normal for this place and date: the average high and low over 30
 /// years, from Open-Meteo's historical weather records.
@@ -37,7 +38,7 @@ Future<Normals> fetchNormals(
 
   final response = await http.get(uri).timeout(const Duration(seconds: 30));
   if (response.statusCode != 200) {
-    throw Exception('The historical weather service returned error ${response.statusCode}.');
+    throw Exception(t.serviceError(t.historyService, response.statusCode));
   }
   final data = jsonDecode(response.body) as Map<String, dynamic>;
   final daily = data['daily'] as Map<String, dynamic>;
@@ -61,7 +62,7 @@ Future<Normals> fetchNormals(
     lowSum += l;
     count++;
   }
-  if (count == 0) throw Exception('No historical records for this place.');
+  if (count == 0) throw Exception(t.noHistory);
 
   final normals = Normals(high: highSum / count, low: lowSum / count);
   _cache[key] = normals;

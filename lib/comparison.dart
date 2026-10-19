@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'models.dart';
 import 'theme.dart';
 import 'weather.dart';
+import 'strings.dart';
 
 /// One colour per model, in a fixed order, so Canada is always blue,
 /// the US always orange and Europe always green, whatever else changes.
@@ -44,14 +45,12 @@ class ModelComparisonSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Forecast models compared', style: theme.textTheme.titleMedium),
+        Text(t.modelsTitle, style: theme.textTheme.titleMedium),
         const SizedBox(height: 6),
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 680),
           child: Text(
-            'The forecast above blends several computer weather models. '
-            'Here is what three national weather services predict on their own. '
-            'Where they agree, the forecast is more certain.',
+            t.modelsIntro,
             style: TextStyle(fontSize: 15, color: colors.onSurfaceVariant, height: 1.4),
           ),
         ),
@@ -63,8 +62,8 @@ class ModelComparisonSection extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             spacing: 8,
             children: [
-              Text("Couldn't load the model forecasts. $error"),
-              TextButton(onPressed: onRetry, child: const Text('Try again')),
+              Text(t.modelsFailed(error)),
+              TextButton(onPressed: onRetry, child: Text(t.tryAgain)),
             ],
           )
         else
@@ -125,22 +124,18 @@ String? _summary(ModelComparison c) {
   // "Close" means within about 2 °C (4 °F).
   final close = c.tempUnit == '°F' ? 4.0 : 2.0;
   final widest = known.reduce((a, b) => b.spread > a.spread ? b : a);
-  final models = c.runs.length == 3 ? 'All three models' : 'The models';
-
   if (widest.spread <= close) {
-    return '$models agree closely this week: '
-        'their daily highs are never more than ${widest.spread.round()}° apart.';
+    return t.modelsAgreeWeek(c.runs.length == 3, widest.spread.round());
   }
 
   final todaySpread = spreads.first;
   final today = todaySpread == null
       ? ''
       : todaySpread <= close
-          ? 'They agree closely today. '
-          : 'Today their highs are ${todaySpread.round()}° apart. ';
-  final day = widest.day == 0 ? 'today' : 'on ${_weekdayName(c.days[widest.day])}';
-  return '${today}They disagree most $day, when their highs differ by '
-      '${widest.spread.round()}°, so treat that forecast with some caution.';
+          ? t.modelsAgreeToday
+          : t.modelsTodaySpread(todaySpread.round());
+  final day = widest.day == 0 ? null : c.days[widest.day];
+  return '$today${t.modelsDisagree(day, widest.spread.round())}';
 }
 
 class _Legend extends StatelessWidget {
@@ -252,9 +247,9 @@ class _ModelChart extends StatelessWidget {
                 if (i >= hours.length) return const SizedBox.shrink();
                 // "Now" at the start, then the day's name at each midnight.
                 final label = i == 0
-                    ? 'Now'
+                    ? t.now
                     : hours[i].hour == 0
-                        ? _weekdayName(hours[i])
+                        ? t.weekdayShort(hours[i])
                         : null;
                 if (label == null) return const SizedBox.shrink();
                 return Padding(
@@ -312,13 +307,13 @@ class _ModelChart extends StatelessWidget {
       fontSize: 13,
     );
     return LineTooltipItem(
-      showTime ? '${_weekdayName(time)} ${hoursMinutes(time)}\n' : '',
+      showTime ? '${t.weekdayShort(time)} ${hoursMinutes(time)}\n' : '',
       textStyle.copyWith(fontWeight: FontWeight.w600),
       textAlign: TextAlign.left,
       children: [
         TextSpan(text: '● ', style: textStyle.copyWith(color: _colorFor(context, run.model))),
         TextSpan(
-          text: '${run.model.name}  ${spot.y.toStringAsFixed(1)}${comparison.tempUnit}',
+          text: '${run.model.name}  ${t.decimal(spot.y, 1)}${comparison.tempUnit}',
           style: textStyle,
         ),
       ],
@@ -428,10 +423,10 @@ class _DailyTable extends StatelessWidget {
         children: [
           TableRow(
             children: [
-              cell(Text('High and low', style: TextStyle(fontSize: 14, color: muted))),
+              cell(Text(t.highAndLow, style: TextStyle(fontSize: 14, color: muted))),
               for (var d = 0; d < days.length; d++)
                 cell(Text(
-                  d == 0 ? 'Today' : _weekdayName(days[d]),
+                  d == 0 ? t.today : t.weekdayShort(days[d]),
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w500),
                 )),
             ],
@@ -475,9 +470,4 @@ class _DailyTable extends StatelessWidget {
       ),
     );
   }
-}
-
-String _weekdayName(DateTime date) {
-  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return names[date.weekday - 1];
 }

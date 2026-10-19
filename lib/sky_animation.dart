@@ -2,11 +2,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'app_state.dart';
+import 'settings.dart';
 import 'theme.dart';
 
 /// Gentle motion in the sky that matches the weather: rain, snow, drifting
-/// clouds, twinkling stars. People who turn off animations in Windows get a
-/// still picture instead.
+/// clouds, twinkling stars. It holds still (showing a still picture) when:
+/// - animations are turned off in the system's accessibility settings,
+/// - power saver is on in Weather Dash's settings, or
+/// - Weather Dash is in the background and "pause in background" is on.
 class SkyAnimation extends StatefulWidget {
   const SkyAnimation({super.key, required this.weatherCode, required this.isDay});
 
@@ -24,20 +28,42 @@ class _SkyAnimationState extends State<SkyAnimation> with SingleTickerProviderSt
       AnimationController(vsync: this, duration: const Duration(seconds: 60));
 
   @override
+  void initState() {
+    super.initState();
+    settings.addListener(_update);
+    appInForeground.addListener(_update);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final still = MediaQuery.of(context).disableAnimations;
-    if (still && _clock.isAnimating) {
-      _clock.stop();
-    } else if (!still && !_clock.isAnimating) {
-      _clock.repeat();
-    }
+    _update();
   }
 
   @override
   void dispose() {
+    settings.removeListener(_update);
+    appInForeground.removeListener(_update);
     _clock.dispose();
     super.dispose();
+  }
+
+  bool get _still {
+    final s = settings.value;
+    return MediaQuery.of(context).disableAnimations ||
+        s.powerSaver ||
+        (s.pauseInBackground && !appInForeground.value);
+  }
+
+  /// Starts or stops the clock to match the settings and window state.
+  void _update() {
+    if (!mounted) return;
+    final still = _still;
+    if (still && _clock.isAnimating) {
+      _clock.stop(); // Freezes where it is, rather than jumping back.
+    } else if (!still && !_clock.isAnimating) {
+      _clock.repeat();
+    }
   }
 
   @override
@@ -50,7 +76,7 @@ class _SkyAnimationState extends State<SkyAnimation> with SingleTickerProviderSt
             kind: skyKindFor(widget.weatherCode),
             isDay: widget.isDay,
             stormy: widget.weatherCode >= 95,
-            still: MediaQuery.of(context).disableAnimations,
+            still: MediaQuery.of(context).disableAnimations || settings.value.powerSaver,
           ),
           child: const SizedBox.expand(),
         ),

@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'strings.dart';
+
 /// The moon's phase, worked out from the date. The moon goes from new to
 /// full and back every 29.53 days, so counting days since a known new moon
 /// tells us where it is in that cycle.
@@ -26,16 +28,12 @@ class MoonPhase {
 
   bool get waxing => age < synodicMonth / 2;
 
+  /// The phase's name in the current language, e.g. "Waxing gibbous".
   String get name {
-    const step = 29.530588853 / 16;
-    if (age < step || age >= 15 * step) return 'New moon';
-    if (age < 3 * step) return 'Waxing crescent';
-    if (age < 5 * step) return 'First quarter';
-    if (age < 7 * step) return 'Waxing gibbous';
-    if (age < 9 * step) return 'Full moon';
-    if (age < 11 * step) return 'Waning gibbous';
-    if (age < 13 * step) return 'Last quarter';
-    return 'Waning crescent';
+    // Eight phases, each centred on its moment: new moon covers the last
+    // and first sixteenth of the cycle, and so on.
+    final index = ((age / synodicMonth * 8) + 0.5).floor() % 8;
+    return t.moonPhases[index];
   }
 }
 

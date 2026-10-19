@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'aurora.dart';
+import 'feels.dart';
 import 'normals.dart';
+import 'strings.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -28,6 +30,7 @@ class InsightsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final notes = <(IconData, String)>[
+      if (_comfortWarning() case final n?) (Icons.health_and_safety_outlined, n),
       if (_normalNote() case final n?) (Icons.history, n),
       if (_bestTimeNote() case final n?) (Icons.directions_walk, n),
       if (_frostNote() case final n?) (Icons.ac_unit, n),
@@ -38,7 +41,7 @@ class InsightsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('At a glance', style: theme.textTheme.titleMedium),
+        Text(t.atAGlance, style: theme.textTheme.titleMedium),
         const SizedBox(height: 10),
         for (final (icon, text) in notes)
           Padding(
@@ -66,14 +69,10 @@ class InsightsSection extends StatelessWidget {
     final today = report.today;
     if (n == null || today == null) return null;
     final diff = today.high - n.high;
-    final date = '${_months[today.date.month - 1]} ${today.date.day}';
+    final date = t.dayMonth(today.date);
     final threshold = fahrenheit ? 3.0 : 1.5;
-    if (diff.abs() < threshold) {
-      return "Today's high of ${degrees(today.high)} is about normal for $date.";
-    }
-    final way = diff > 0 ? 'warmer' : 'colder';
-    return "Today's high of ${degrees(today.high)} is ${diff.abs().round()}° $way than "
-        'normal for $date. The 30-year average high is ${degrees(n.high)}.';
+    if (diff.abs() < threshold) return t.normalAbout(degrees(today.high), date);
+    return t.normalDiff(degrees(today.high), diff.abs().round(), diff > 0, date, degrees(n.high));
   }
 
   /// Finds the most pleasant two daylight hours in the next day: dry, not
@@ -98,12 +97,9 @@ class InsightsSection extends StatelessWidget {
     final start = hours[best].time;
     final end = start.add(const Duration(hours: 2));
     final now = report.current.time;
-    final when = start.day == now.day ? 'today' : 'tomorrow';
     final temp = degrees((hours[best].temperature + hours[best + 1].temperature) / 2);
     final rain = math.max(hours[best].precipitationChance, hours[best + 1].precipitationChance);
-    final sky = rain < 20 ? 'and likely dry' : 'with a $rain% chance of rain or snow';
-    return 'Best time to be outside $when: ${hoursMinutes(start)} to ${hoursMinutes(end)}, '
-        'around $temp $sky.';
+    return t.bestTime(start.day == now.day, hoursMinutes(start), hoursMinutes(end), temp, rain);
   }
 
   /// Warns about frost tonight, or says when the next frost is due.
@@ -117,15 +113,13 @@ class InsightsSection extends StatelessWidget {
     if (tonight.isNotEmpty) {
       final low = tonight.reduce(math.min);
       if (_c(low) <= 0) {
-        return 'Frost likely tonight, down to ${degrees(low)}. '
-            'Cover tender plants and expect icy windshields in the morning.';
+        return t.frostTonight(degrees(low));
       }
     }
     for (var i = 2; i < report.daily.length; i++) {
       final day = report.daily[i];
       if (_c(day.low) <= 0) {
-        return 'No frost tonight. The next frost looks likely early '
-            '${_weekdays[day.date.weekday - 1]} morning, down to ${degrees(day.low)}.';
+        return t.nextFrost(day.date, degrees(day.low));
       }
     }
     return null;
@@ -134,11 +128,31 @@ class InsightsSection extends StatelessWidget {
   String? _auroraNote() {
     final a = aurora;
     if (a == null) return null;
-    final lights = southern ? 'Southern lights' : 'Northern lights';
-    final note = '$lights tonight: ${a.chance.toLowerCase()}. Geomagnetic activity '
-        'should reach about Kp ${a.maxKp.toStringAsFixed(1)}; seeing them from here '
-        'usually takes Kp ${a.kpNeeded.toStringAsFixed(0)} or more.';
-    return '${note[0].toUpperCase()}${note.substring(1)}${_cloudyTonight() ? ' Cloud may hide the sky.' : ''}';
+    return t.auroraNote(
+      southern,
+      t.auroraChance(a.chance),
+      t.decimal(a.maxKp, 1),
+      a.kpNeeded.toStringAsFixed(0),
+      _cloudyTonight(),
+    );
+  }
+
+  /// A warning when the wind chill or humidex reaches a level where
+  /// Environment Canada advises taking care.
+  String? _comfortWarning() {
+    final now = report.current;
+    final tempC = _c(now.temperature);
+    double shown(double c) => fahrenheit ? c * 9 / 5 + 32 : c;
+    final chill = windChillC(tempC, toKmh(now.windSpeed, report.windUnit));
+    if (chill != null && chill <= -28) {
+      return t.windChillWarning(degrees(shown(chill)), t.windChillRisk(chill));
+    }
+    final humidex = humidexC(tempC, now.humidity);
+    if (humidex != null && humidex >= 40) {
+      // Humidex is always given on the Celsius scale, even in °F.
+      return t.humidexWarning('${humidex.round()}', t.humidexLevel(humidex));
+    }
+    return null;
   }
 
   /// True if most hours between 22:00 and 02:00 tonight are overcast or wet.
@@ -154,9 +168,3 @@ class InsightsSection extends StatelessWidget {
     return night.where((c) => c >= 3).length > night.length / 2;
   }
 }
-
-const _weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-const _months = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-];

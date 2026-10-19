@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
+import 'strings.dart';
 
 /// The chance of seeing the northern (or southern) lights tonight.
 class AuroraOutlook {
@@ -10,10 +11,11 @@ class AuroraOutlook {
 
   const AuroraOutlook({required this.maxKp, required this.kpNeeded});
 
+  /// 'good', 'possible' or 'unlikely'. Shown in words with `t.auroraChance`.
   String get chance {
-    if (maxKp >= kpNeeded) return 'Good chance';
-    if (maxKp >= kpNeeded - 1) return 'Possible';
-    return 'Unlikely';
+    if (maxKp >= kpNeeded) return 'good';
+    if (maxKp >= kpNeeded - 1) return 'possible';
+    return 'unlikely';
   }
 }
 
@@ -43,7 +45,7 @@ Future<AuroraOutlook> fetchAuroraOutlook(double lat, double lon) async {
   );
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('NOAA returned error ${response.statusCode}.');
+    throw Exception(t.serviceError('NOAA', response.statusCode));
   }
 
   final rows = jsonDecode(response.body) as List;

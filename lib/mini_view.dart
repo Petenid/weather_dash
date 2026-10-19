@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'sky_animation.dart';
+import 'strings.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -85,7 +86,7 @@ class MiniView extends StatelessWidget {
                             IconButton(
                               icon: const Icon(Icons.open_in_full, size: 20),
                               color: Colors.white,
-                              tooltip: 'Back to the full window (Ctrl+M)',
+                              tooltip: t.backToFull,
                               onPressed: onExit,
                             ),
                           ],
@@ -118,7 +119,7 @@ class MiniView extends StatelessWidget {
                           ),
                           if (report.today != null)
                             Text(
-                              'High ${degrees(report.today!.high)}    Low ${degrees(report.today!.low)}',
+                              t.highLow(degrees(report.today!.high), degrees(report.today!.low)),
                               style: TextStyle(fontSize: 15, color: soft),
                             ),
                         ],

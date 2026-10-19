@@ -2,22 +2,35 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:http/http.dart' as http;
+import 'strings.dart';
 
 /// One national weather service's forecast model.
 class ForecastModel {
   final String id; // Open-Meteo's name for it
-  final String name; // what we show
-  final String source; // who runs it
 
-  const ForecastModel({required this.id, required this.name, required this.source});
+  const ForecastModel(this.id);
+
+  /// What we show, in the current language.
+  String get name => switch (id) {
+        'gem_seamless' => t.canada,
+        'gfs_seamless' => t.unitedStates,
+        _ => t.europe,
+      };
+
+  /// Who runs it.
+  String get source => switch (id) {
+        'gem_seamless' => t.gemSource,
+        'gfs_seamless' => t.gfsSource,
+        _ => t.ecmwfSource,
+      };
 }
 
 /// The three models we compare. Open-Meteo's main forecast blends several
 /// models together; this shows what three of them say on their own.
 const comparedModels = [
-  ForecastModel(id: 'gem_seamless', name: 'Canada', source: 'Environment Canada, GEM model'),
-  ForecastModel(id: 'gfs_seamless', name: 'United States', source: 'NOAA, GFS model'),
-  ForecastModel(id: 'ecmwf_ifs025', name: 'Europe', source: 'ECMWF, IFS model'),
+  ForecastModel('gem_seamless'),
+  ForecastModel('gfs_seamless'),
+  ForecastModel('ecmwf_ifs025'),
 ];
 
 /// What one model predicts. Values can be null where a model has no data.
@@ -83,14 +96,14 @@ Future<ModelComparison> fetchModelComparison(
 
   final response = await http.get(uri).timeout(const Duration(seconds: 20));
   if (response.statusCode != 200) {
-    throw Exception('Open-Meteo returned error ${response.statusCode}.');
+    throw Exception(t.serviceError('Open-Meteo', response.statusCode));
   }
 
   final Map<String, dynamic> data;
   try {
     data = jsonDecode(response.body) as Map<String, dynamic>;
   } on FormatException {
-    throw Exception('Open-Meteo had a temporary problem.');
+    throw Exception(t.serviceHiccup('Open-Meteo'));
   }
 
   final hourly = data['hourly'] as Map<String, dynamic>;
@@ -120,7 +133,7 @@ Future<ModelComparison> fetchModelComparison(
   }
 
   if (runs.isEmpty) {
-    throw Exception('No model forecasts are available for this place.');
+    throw Exception(t.noModels);
   }
 
   return ModelComparison(

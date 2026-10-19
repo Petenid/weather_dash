@@ -3,11 +3,13 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'air_quality.dart';
 import 'alerts.dart';
+import 'app_state.dart';
 import 'aurora.dart';
 import 'comparison.dart';
 import 'dashboard.dart';
@@ -18,11 +20,13 @@ import 'models.dart';
 import 'normals.dart';
 import 'offline_cache.dart';
 import 'places.dart';
+import 'platform.dart';
 import 'radar.dart';
 import 'search_page.dart';
 import 'settings.dart';
 import 'share_image.dart';
 import 'sky.dart';
+import 'strings.dart';
 import 'theme.dart';
 import 'updates.dart';
 import 'weather.dart';
@@ -47,6 +51,11 @@ class WeatherApp extends StatelessWidget {
         theme: buildTheme(Brightness.light),
         darkTheme: buildTheme(Brightness.dark),
         themeMode: s.themeMode,
+        // Canadian English or Canadian French. This also translates
+        // Flutter's own text, such as "Back" and "Cancel" on buttons.
+        locale: s.french ? const Locale('fr', 'CA') : const Locale('en', 'CA'),
+        supportedLocales: const [Locale('en', 'CA'), Locale('fr', 'CA')],
+        localizationsDelegates: GlobalMaterialLocalizations.delegates,
         home: const HomePage(),
       ),
     );
@@ -63,7 +72,7 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   static const _defaultPlace = Place(
     name: 'Témiscaming',
-    region: 'Quebec',
+    region: 'Québec', // Written with the accent in both languages.
     country: 'Canada',
     latitude: 46.72,
     longitude: -79.10,
@@ -105,23 +114,38 @@ class _HomePageState extends State<HomePage> {
   // Counts requests, so a slow old answer can't overwrite a newer one.
   int _requestId = 0;
 
-  // The wind unit the current data was fetched with.
+  // The settings the current data was fetched with.
   String _windUnit = settings.value.windUnit;
+  bool _french = settings.value.french;
+  int _refreshMinutes = settings.value.refreshMinutes;
+
+  // Tells us when the window goes to the background and comes back.
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
     settings.addListener(_settingsChanged);
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) => appInForeground.value = state == AppLifecycleState.resumed,
+    );
     _start();
-    // Fetch fresh data every 15 minutes, so the dashboard can stay open.
-    _timer = Timer.periodic(const Duration(minutes: 15), (_) => _load());
+    _startTimer();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _lifecycle.dispose();
     settings.removeListener(_settingsChanged);
     super.dispose();
+  }
+
+  /// Fetches fresh data on a schedule (every 15 minutes, or every hour in
+  /// power saver), so the dashboard can stay open.
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(Duration(minutes: _refreshMinutes), (_) => _load());
   }
 
   /// On startup: saved choices first, then the offline copy so something
@@ -197,8 +221,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _settingsChanged() {
-    // A new wind unit needs new data; other settings only need a redraw.
-    if (settings.value.windUnit != _windUnit) {
+    final s = settings.value;
+    if (s.refreshMinutes != _refreshMinutes) {
+      _refreshMinutes = s.refreshMinutes;
+      _startTimer();
+    }
+    // A new wind unit or language needs new data (alerts and place names
+    // come in the chosen language); other settings only need a redraw.
+    if (s.windUnit != _windUnit || s.french != _french) {
+      _french = s.french;
       _load();
     } else {
       setState(() {});
@@ -369,16 +400,15 @@ class _HomePageState extends State<HomePage> {
       case SkyMenuAction.copyImage:
         try {
           await copyImage(_skyKey);
-          _showMessage('Copied. Paste it into a chat or document.');
+          _showMessage(t.copied);
         } catch (_) {
-          _showMessage("Couldn't copy the picture.");
+          _showMessage(t.copyFailed);
         }
       case SkyMenuAction.saveImage:
         try {
-          final name = 'Weather ${_shownPlace.name}.png';
-          if (await saveImage(_skyKey, name)) _showMessage('Picture saved.');
+          if (await saveImage(_skyKey, t.imageName(_shownPlace.name))) _showMessage(t.saved);
         } catch (_) {
-          _showMessage("Couldn't save the picture.");
+          _showMessage(t.saveFailed);
         }
       case SkyMenuAction.miniMode:
         await _toggleMini();
@@ -397,7 +427,7 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       opened = false;
     }
-    if (!opened && mounted) _showMessage("Couldn't open $url");
+    if (!opened && mounted) _showMessage(t.couldNotOpen(url));
   }
 
   @override
@@ -419,7 +449,7 @@ class _HomePageState extends State<HomePage> {
       const SingleActivator(LogicalKeyboardKey.keyR, control: true): _load,
       const SingleActivator(LogicalKeyboardKey.keyF, control: true): _openSearch,
       const SingleActivator(LogicalKeyboardKey.keyD, control: true): _toggleFavourite,
-      const SingleActivator(LogicalKeyboardKey.keyM, control: true): _toggleMini,
+      if (desktopFeatures) const SingleActivator(LogicalKeyboardKey.keyM, control: true): _toggleMini,
     };
 
     if (_mini) {
@@ -483,6 +513,9 @@ class _HomePageState extends State<HomePage> {
                         air: matches(_airPlace) ? _air : null,
                         airError: _airError,
                         onOpenLink: _openLink,
+                        latitude: shown.latitude,
+                        longitude: shown.longitude,
+                        refreshMinutes: _refreshMinutes,
                       ),
                   ],
                 ),

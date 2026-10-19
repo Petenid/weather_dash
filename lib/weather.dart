@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
+import 'strings.dart';
+
 /// The current conditions we care about, pulled out of Open-Meteo's JSON.
 class CurrentWeather {
   final double temperature;
@@ -105,8 +107,11 @@ class WeatherReport {
   final List<HourlyPoint> allHours;
   final List<DailyForecast> daily;
   final String tempUnit;
-  final String windUnit;
+  final String windUnit; // One of the keys in [windUnits], e.g. 'kmh'.
   final String precipUnit;
+
+  /// How far the place's local time is from UTC.
+  final Duration utcOffset;
 
   const WeatherReport({
     required this.current,
@@ -115,7 +120,11 @@ class WeatherReport {
     required this.tempUnit,
     required this.windUnit,
     required this.precipUnit,
+    this.utcOffset = Duration.zero,
   });
+
+  /// The wind unit as shown on screen, e.g. "km/h" or "nœuds".
+  String get windLabel => t.windUnitLabel(windUnit);
 
   /// Today's forecast (the first day), or null if the list is empty.
   DailyForecast? get today => daily.isEmpty ? null : daily.first;
@@ -139,8 +148,9 @@ class WeatherReport {
 
 /// Asks Open-Meteo for current conditions and 7 days of hourly and daily
 /// forecasts.
-/// Wind speed units Open-Meteo understands, and how we label them.
-const windUnits = {'kmh': 'km/h', 'ms': 'm/s', 'mph': 'mph', 'kn': 'knots'};
+/// Wind speed units Open-Meteo understands. Their on-screen names come from
+/// `t.windUnitLabel`.
+const windUnits = ['kmh', 'ms', 'mph', 'kn'];
 
 /// Downloads the forecast as JSON text. Kept separate from reading it, so
 /// the text can be saved and shown again when there's no internet.
@@ -169,7 +179,7 @@ Future<String> fetchForecastJson(
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('Open-Meteo returned error ${response.statusCode}.');
+    throw Exception(t.serviceError('Open-Meteo', response.statusCode));
   }
   return response.body;
 }
@@ -184,7 +194,7 @@ WeatherReport parseForecast(
   try {
     data = jsonDecode(json) as Map<String, dynamic>;
   } on FormatException {
-    throw Exception('Open-Meteo had a temporary problem.');
+    throw Exception(t.serviceHiccup('Open-Meteo'));
   }
 
   // Open-Meteo sends each variable as its own list; item i of every list
@@ -235,7 +245,8 @@ WeatherReport parseForecast(
     allHours: hours,
     daily: days,
     tempUnit: fahrenheit ? '°F' : '°C',
-    windUnit: windUnits[windUnit] ?? windUnit,
+    windUnit: windUnit,
+    utcOffset: Duration(seconds: (data['utc_offset_seconds'] as num?)?.toInt() ?? 0),
     precipUnit: fahrenheit ? 'in' : 'mm',
   );
 }
@@ -246,49 +257,13 @@ DateTime? _parseTime(Object? value) =>
 
 /// Turns an error into a sentence a person can act on.
 String friendlyError(Object error) {
-  if (error is TimeoutException) {
-    return 'Open-Meteo took too long to answer. Check your connection and try again.';
-  }
-  if (error is http.ClientException) {
-    return "Can't reach Open-Meteo. Check your internet connection and try again.";
-  }
+  if (error is TimeoutException) return t.timeoutError;
+  if (error is http.ClientException) return t.offlineError;
   return error.toString().replaceFirst('Exception: ', '');
 }
 
-/// WMO weather codes, from the Open-Meteo docs.
-const Map<int, String> _descriptions = {
-  0: 'Clear sky',
-  1: 'Mainly clear',
-  2: 'Partly cloudy',
-  3: 'Overcast',
-  45: 'Fog',
-  48: 'Depositing rime fog',
-  51: 'Light drizzle',
-  53: 'Moderate drizzle',
-  55: 'Dense drizzle',
-  56: 'Light freezing drizzle',
-  57: 'Dense freezing drizzle',
-  61: 'Slight rain',
-  63: 'Moderate rain',
-  65: 'Heavy rain',
-  66: 'Light freezing rain',
-  67: 'Heavy freezing rain',
-  71: 'Slight snowfall',
-  73: 'Moderate snowfall',
-  75: 'Heavy snowfall',
-  77: 'Snow grains',
-  80: 'Slight rain showers',
-  81: 'Moderate rain showers',
-  82: 'Violent rain showers',
-  85: 'Slight snow showers',
-  86: 'Heavy snow showers',
-  95: 'Thunderstorm',
-  96: 'Thunderstorm with slight hail',
-  97: 'Heavy thunderstorm',
-  99: 'Thunderstorm with heavy hail',
-};
-
-String describeWeather(int code) => _descriptions[code] ?? 'Unknown';
+/// The weather in words, in the current language (WMO weather codes).
+String describeWeather(int code) => t.describeWeather(code);
 
 IconData weatherIcon(int code, {required bool isDay}) {
   return switch (code) {
@@ -304,20 +279,17 @@ IconData weatherIcon(int code, {required bool isDay}) {
   };
 }
 
-/// Turns 0–360° into N, NE, E, and so on.
-String compassDirection(int degrees) {
-  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
-  return directions[((degrees % 360) / 45).round() % 8];
-}
+/// Which of the 8 compass points (0 = north, 1 = northeast...) an angle is.
+int compassIndex(int degrees) => ((degrees % 360) / 45).round() % 8;
+
+/// Turns 0–360° into N, NE, E, and so on (N, NE, E, SE, S, SO, O, NO in French).
+String compassDirection(int degrees) => t.compassPoints[compassIndex(degrees)];
+
+/// "northwest" / "nord-ouest".
+String compassName(int degrees) => t.compassNames[compassIndex(degrees)];
 
 /// The standard WHO wording for a UV index value.
-String uvLevel(double uv) {
-  if (uv < 3) return 'Low';
-  if (uv < 6) return 'Moderate';
-  if (uv < 8) return 'High';
-  if (uv < 11) return 'Very high';
-  return 'Extreme';
-}
+String uvLevel(double uv) => t.uvLevel(uv);
 
 /// A rounded temperature like "−3°", using a proper minus sign.
 String degrees(double value) => '${value.round()}°'.replaceFirst('-', '−');
@@ -326,11 +298,18 @@ String degrees(double value) => '${value.round()}°'.replaceFirst('-', '−');
 /// settings screen.
 bool use24HourClock = true;
 
-/// A time of day, in the clock style chosen in settings.
-String hoursMinutes(DateTime t) {
-  final mm = t.minute.toString().padLeft(2, '0');
-  if (use24HourClock) return '${t.hour.toString().padLeft(2, '0')}:$mm';
-  final h = t.hour % 12 == 0 ? 12 : t.hour % 12;
-  final suffix = t.hour < 12 ? 'am' : 'pm';
-  return mm == '00' ? '$h $suffix' : '$h:$mm $suffix';
+/// A time of day, in the clock style chosen in settings and the current
+/// language: "13:05" or "1:05 pm" in English, "13 h 05" or "1 h 05 p.m." in
+/// French, as is usual in Quebec.
+String hoursMinutes(DateTime time) {
+  final mm = time.minute.toString().padLeft(2, '0');
+  final h12 = time.hour % 12 == 0 ? 12 : time.hour % 12;
+  if (frenchActive) {
+    final h = use24HourClock ? time.hour : h12;
+    final suffix = use24HourClock ? '' : (time.hour < 12 ? ' a.m.' : ' p.m.');
+    return mm == '00' ? '$h h$suffix' : '$h h $mm$suffix';
+  }
+  if (use24HourClock) return '${time.hour.toString().padLeft(2, '0')}:$mm';
+  final suffix = time.hour < 12 ? 'am' : 'pm';
+  return mm == '00' ? '$h12 $suffix' : '$h12:$mm $suffix';
 }

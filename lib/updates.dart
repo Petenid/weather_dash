@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 /// This copy's version. GitHub Actions fills it in when it builds a release
@@ -17,7 +18,9 @@ class UpdateInfo {
 
 /// Returns the newest release if it's newer than this copy, otherwise null.
 Future<UpdateInfo?> checkForUpdate() async {
-  if (appVersion == 'dev') return null;
+  // The web version is always the newest, and copies run from VS Code
+  // have no version to compare.
+  if (kIsWeb || appVersion == 'dev') return null;
   final uri = Uri.https('api.github.com', '/repos/Petenid/weather_dash/releases/latest');
   final response = await http
       .get(uri, headers: {'Accept': 'application/vnd.github+json'})

@@ -4,6 +4,8 @@
 #   The build appears under the run's "Artifacts" for testing.
 # Every tag starting with "v" (for example v1.0.0): does all of that, then
 #   publishes a GitHub Release with a portable .zip and a Windows installer.
+# Every push to main also builds the browser version and publishes it to
+#   GitHub Pages (turn this on once in Settings > Pages > Source: GitHub Actions).
 
 name: Build
 
@@ -95,3 +97,42 @@ jobs:
           name: Weather Dash ${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: dist/*
+
+  # The browser version, published to https://petenid.github.io/weather_dash/
+  web:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Get the code
+        uses: actions/checkout@v7
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.7
+          cache: true
+
+      - name: Get packages
+        run: flutter pub get
+
+      - name: Build the web version
+        # The site lives in a /weather_dash/ folder on github.io.
+        run: flutter build web --release --base-href /weather_dash/
+
+      - name: Package the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: build/web
+
+      - name: Publish to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v5

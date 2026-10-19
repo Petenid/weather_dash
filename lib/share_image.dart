@@ -1,11 +1,13 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:pasteboard/pasteboard.dart';
+
+import 'strings.dart';
 
 /// Takes a picture of whatever is inside the RepaintBoundary with [key].
 Future<Uint8List> captureImage(GlobalKey key) async {
@@ -22,19 +24,25 @@ Future<void> copyImage(GlobalKey key) async {
   await Pasteboard.writeImage(bytes);
 }
 
-/// Asks where to save, then saves a picture of the weather as a PNG file.
+/// Saves a picture of the weather as a PNG file. In the desktop app this
+/// asks where to save it; in a browser it downloads straight away.
 /// Returns false if the person cancelled.
 Future<bool> saveImage(GlobalKey key, String suggestedName) async {
+  final bytes = await captureImage(key);
+  final file = XFile.fromData(bytes, mimeType: 'image/png', name: suggestedName);
+  if (kIsWeb) {
+    await file.saveTo(suggestedName);
+    return true;
+  }
   final location = await getSaveLocation(
     suggestedName: suggestedName,
-    acceptedTypeGroups: const [
-      XTypeGroup(label: 'PNG image', extensions: ['png']),
+    acceptedTypeGroups: [
+      XTypeGroup(label: t.pngImage, extensions: const ['png']),
     ],
   );
   if (location == null) return false;
-  final bytes = await captureImage(key);
   var path = location.path;
   if (!path.toLowerCase().endsWith('.png')) path = '$path.png';
-  await File(path).writeAsBytes(bytes);
+  await file.saveTo(path);
   return true;
 }

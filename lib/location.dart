@@ -1,28 +1,24 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import 'places.dart';
+import 'strings.dart';
 
 /// Finds where this computer is, using Windows location services, and names
 /// the place using OpenStreetMap's Nominatim service.
 Future<Place> locateMe() async {
   if (!await Geolocator.isLocationServiceEnabled()) {
-    throw Exception(
-      'Location is turned off in Windows. Turn it on in Settings, '
-      'Privacy & security, Location, including "Let desktop apps access your location".',
-    );
+    throw Exception(t.locationOff);
   }
   var permission = await Geolocator.checkPermission();
   if (permission == LocationPermission.denied) {
     permission = await Geolocator.requestPermission();
   }
   if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
-    throw Exception(
-      'Weather Dash isn\'t allowed to use your location. You can allow it in '
-      'Windows Settings, Privacy & security, Location.',
-    );
+    throw Exception(t.locationDenied);
   }
 
   final position = await Geolocator.getCurrentPosition(
@@ -41,11 +37,15 @@ Future<Place> locateMe() async {
       'lon': '$lon',
       'format': 'jsonv2',
       'zoom': '10',
-      'accept-language': 'en',
+      'accept-language': t.fr ? 'fr' : 'en',
     });
-    // Nominatim asks every app to say who it is.
+    // Nominatim asks every app to say who it is. Browsers don't let web
+    // pages set this themselves (they send their own), so only the desktop
+    // app adds it.
     final response = await http
-        .get(uri, headers: {'User-Agent': 'WeatherDash/1.0 (github.com/Petenid/weather_dash)'})
+        .get(uri, headers: {
+          if (!kIsWeb) 'User-Agent': 'WeatherDash/1.0 (github.com/Petenid/weather_dash)',
+        })
         .timeout(const Duration(seconds: 10));
     final address = (jsonDecode(response.body) as Map<String, dynamic>)['address']
         as Map<String, dynamic>?;
@@ -63,5 +63,5 @@ Future<Place> locateMe() async {
   } catch (_) {
     // Fall through to an unnamed place.
   }
-  return Place(name: 'My location', latitude: lat, longitude: lon);
+  return Place(name: t.myLocation, latitude: lat, longitude: lon);
 }

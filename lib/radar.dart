@@ -8,6 +8,7 @@ import 'package:latlong2/latlong.dart';
 
 import 'places.dart';
 import 'weather.dart';
+import 'strings.dart';
 
 /// Colour recipes for the base map. Each row works out one colour channel
 /// (red, green, blue, opacity) from the original red, green, blue and opacity.
@@ -43,7 +44,7 @@ Future<(String, List<RadarFrame>)> fetchRadarFrames() async {
   final uri = Uri.https('api.rainviewer.com', '/public/weather-maps.json');
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('RainViewer returned error ${response.statusCode}.');
+    throw Exception(t.serviceError('RainViewer', response.statusCode));
   }
   final data = jsonDecode(response.body) as Map<String, dynamic>;
   final host = data['host'] as String? ?? 'https://tilecache.rainviewer.com';
@@ -154,7 +155,7 @@ class _RadarSectionState extends State<RadarSection> {
           spacing: 16,
           runSpacing: 8,
           children: [
-            Text('Radar', style: theme.textTheme.titleMedium),
+            Text(t.radar, style: theme.textTheme.titleMedium),
             if (_frames.isNotEmpty)
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -162,13 +163,13 @@ class _RadarSectionState extends State<RadarSection> {
                   Text(
                     playing
                         ? hoursMinutes(_frames[_index].time)
-                        : 'Latest, ${hoursMinutes(_frames[_index].time)}',
+                        : t.latestFrame(hoursMinutes(_frames[_index].time)),
                     style: TextStyle(fontSize: 15, color: colors.onSurfaceVariant),
                   ),
                   const SizedBox(width: 8),
                   IconButton.filledTonal(
                     icon: Icon(playing ? Icons.pause : Icons.play_arrow),
-                    tooltip: playing ? 'Stop' : 'Play the last two hours',
+                    tooltip: playing ? t.stop : t.playRadar,
                     onPressed: _togglePlay,
                   ),
                 ],
@@ -239,7 +240,7 @@ class _RadarSectionState extends State<RadarSection> {
                 RichAttributionWidget(
                   attributions: [
                     TextSourceAttribution(
-                      'OpenStreetMap contributors',
+                      t.mapContributors,
                       onTap: () => widget.onOpenLink('https://www.openstreetmap.org/copyright'),
                     ),
                     TextSourceAttribution(
@@ -259,15 +260,14 @@ class _RadarSectionState extends State<RadarSection> {
               crossAxisAlignment: WrapCrossAlignment.center,
               spacing: 8,
               children: [
-                Text("Couldn't load the radar pictures. $_error"),
-                TextButton(onPressed: _load, child: const Text('Try again')),
+                Text(t.radarFailed(_error!)),
+                TextButton(onPressed: _load, child: Text(t.tryAgain)),
               ],
             ),
           ),
         const SizedBox(height: 6),
         Text(
-          'Coloured areas show rain and snow; deeper colours mean heavier precipitation. '
-          'Drag to move the map, double-click to zoom in.',
+          t.radarHelp,
           style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
         ),
       ],

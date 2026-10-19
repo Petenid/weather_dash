@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'strings.dart';
 
 /// Current air quality, from Open-Meteo's air quality service (CAMS data).
 class AirQuality {
@@ -22,14 +23,14 @@ Future<AirQuality> fetchAirQuality(double lat, double lon) async {
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('The air quality service returned error ${response.statusCode}.');
+    throw Exception(t.serviceError(t.airService, response.statusCode));
   }
 
   final Map<String, dynamic> data;
   try {
     data = jsonDecode(response.body) as Map<String, dynamic>;
   } on FormatException {
-    throw Exception('The air quality service had a temporary problem.');
+    throw Exception(t.serviceHiccup(t.airService));
   }
 
   final current = data['current'] as Map<String, dynamic>? ?? const {};
@@ -41,14 +42,7 @@ Future<AirQuality> fetchAirQuality(double lat, double lon) async {
 }
 
 /// The official US AQI category names.
-String aqiLevel(int aqi) {
-  if (aqi <= 50) return 'Good';
-  if (aqi <= 100) return 'Moderate';
-  if (aqi <= 150) return 'Unhealthy for sensitive groups';
-  if (aqi <= 200) return 'Unhealthy';
-  if (aqi <= 300) return 'Very unhealthy';
-  return 'Hazardous';
-}
+String aqiLevel(int aqi) => t.aqiLevel(aqi);
 
 /// The standard colours that go with each AQI category. Always shown next to
 /// the category name, never on their own.

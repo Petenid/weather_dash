@@ -5,7 +5,10 @@ import 'package:flutter/material.dart';
 import 'air_quality.dart';
 import 'day_details.dart';
 import 'hourly_chart.dart';
+import 'feels.dart';
 import 'moon.dart';
+import 'solar.dart';
+import 'strings.dart';
 import 'theme.dart';
 import 'weather.dart';
 
@@ -22,7 +25,14 @@ class GroundSections extends StatelessWidget {
     required this.air,
     required this.airError,
     required this.onOpenLink,
+    required this.latitude,
+    required this.longitude,
+    this.refreshMinutes = 15,
   });
+
+  final double latitude;
+  final double longitude;
+  final int refreshMinutes;
 
   final WeatherReport report;
   final bool fahrenheit;
@@ -36,7 +46,7 @@ class GroundSections extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hourly = HourlyPanel(
-      title: 'Next 24 hours',
+      title: t.next24Hours,
       hours: report.next24Hours,
       report: report,
       startsNow: true,
@@ -45,15 +55,22 @@ class GroundSections extends StatelessWidget {
       days: report.daily,
       currentTemp: report.current.temperature,
       fahrenheit: fahrenheit,
-      onOpenDay: (i) => showDayDetails(context, report, i),
+      onOpenDay: (i) => showDayDetails(context, report, i, latitude: latitude, longitude: longitude),
     );
-    final details = DetailsPanel(report: report, air: air, airError: airError);
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DetailsPanel(report: report, air: air, airError: airError, refreshMinutes: refreshMinutes),
+        const SizedBox(height: 20),
+        PhotoTimesPanel(report: report, latitude: latitude, longitude: longitude),
+      ],
+    );
 
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1080),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(28, 32, 28, 20),
+          padding: EdgeInsets.fromLTRB(sideGap(context), 32, sideGap(context), 20),
           child: LayoutBuilder(
             builder: (context, constraints) {
               // Wide windows get two columns; narrow ones stack everything.
@@ -129,10 +146,10 @@ class DailySection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('7-day forecast', style: theme.textTheme.titleMedium),
+        Text(t.sevenDay, style: theme.textTheme.titleMedium),
         const SizedBox(height: 2),
         Text(
-          'Click a day for hour-by-hour details.',
+          t.clickADay,
           style: TextStyle(fontSize: 14, color: theme.colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 8),
@@ -141,7 +158,7 @@ class DailySection extends StatelessWidget {
           _DayRow(
             onTap: () => onOpenDay(i),
             day: days[i],
-            label: i == 0 ? 'Today' : _weekdayName(days[i].date),
+            label: i == 0 ? t.today : t.weekdayShort(days[i].date),
             weekLow: weekLow,
             weekHigh: weekHigh,
             // Today's bar also shows where the temperature is right now.
@@ -177,6 +194,23 @@ class _DayRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
 
+    // On a phone-width screen, the rain chance moves under the day's name
+    // and the arrow is left out, so the temperature bar keeps its room.
+    final compact = MediaQuery.sizeOf(context).width < 520;
+    final rain = day.precipitationChance >= 10
+        ? Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.water_drop, size: 13, color: colors.primary),
+              const SizedBox(width: 2),
+              Text(
+                t.percent(day.precipitationChance),
+                style: TextStyle(fontSize: 14, color: colors.primary),
+              ),
+            ],
+          )
+        : null;
+
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -186,10 +220,23 @@ class _DayRow extends StatelessWidget {
           children: [
             const SizedBox(width: 6),
             SizedBox(
-              width: 64,
-              child: Text(
-                label,
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              width: compact ? 72 : 92,
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Shrinks a long name like "Aujourd'hui" rather than wrapping it.
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                  if (compact && rain != null) rain,
+                ],
               ),
             ),
             SizedBox(
@@ -199,22 +246,8 @@ class _DayRow extends StatelessWidget {
                 child: Icon(weatherIcon(day.weatherCode, isDay: true), size: 24),
               ),
             ),
-            SizedBox(
-              width: 56,
-              // Only mention rain or snow when it's reasonably likely.
-              child: day.precipitationChance >= 10
-                  ? Row(
-                      children: [
-                        Icon(Icons.water_drop, size: 13, color: colors.primary),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${day.precipitationChance}%',
-                          style: TextStyle(fontSize: 14, color: colors.primary),
-                        ),
-                      ],
-                    )
-                  : null,
-            ),
+            // Only mention rain or snow when it's reasonably likely.
+            if (!compact) SizedBox(width: 64, child: rain),
             SizedBox(
               width: 44,
               child: Text(
@@ -239,7 +272,7 @@ class _DayRow extends StatelessWidget {
               width: 44,
               child: Text(degrees(day.high), style: numberStyle(21, weight: FontWeight.w600)),
             ),
-            Icon(Icons.chevron_right, size: 20, color: colors.onSurfaceVariant),
+            if (!compact) Icon(Icons.chevron_right, size: 20, color: colors.onSurfaceVariant),
           ],
         ),
       ),
@@ -336,11 +369,13 @@ class DetailsPanel extends StatelessWidget {
     required this.report,
     required this.air,
     required this.airError,
+    this.refreshMinutes = 15,
   });
 
   final WeatherReport report;
   final AirQuality? air; // Null while loading or if it failed.
   final String? airError;
+  final int refreshMinutes;
 
   @override
   Widget build(BuildContext context) {
@@ -356,6 +391,14 @@ class DetailsPanel extends StatelessWidget {
     final aqi = air?.usAqi;
     final pm25 = air?.pm25;
 
+    // Wind chill and humidex are worked out in °C and km/h, then shown in
+    // the units on screen.
+    final fahrenheit = report.tempUnit == '°F';
+    final tempC = toCelsius(now.temperature, fahrenheit: fahrenheit);
+    double shown(double c) => fahrenheit ? c * 9 / 5 + 32 : c;
+    final chill = windChillC(tempC, toKmh(now.windSpeed, report.windUnit));
+    final humidex = humidexC(tempC, now.humidity);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
       decoration: BoxDecoration(
@@ -365,11 +408,11 @@ class DetailsPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Details', style: theme.textTheme.titleMedium),
+          Text(t.details, style: theme.textTheme.titleMedium),
           const SizedBox(height: 8),
           _DetailRow(
-            label: 'Wind',
-            note: 'From the ${_compassName(now.windDirection)}',
+            label: t.wind,
+            note: t.fromDirection(compassName(now.windDirection)),
             value: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -379,21 +422,34 @@ class DetailsPanel extends StatelessWidget {
                   child: Icon(Icons.navigation, size: 16, color: colors.primary),
                 ),
                 const SizedBox(width: 6),
-                Text('${now.windSpeed.round()} ${report.windUnit}', style: numberStyle(22)),
+                Text('${now.windSpeed.round()} ${report.windLabel}', style: numberStyle(22)),
               ],
             ),
           ),
           _DetailRow(
-            label: 'Humidity',
-            value: Text('${now.humidity}%', style: numberStyle(22)),
+            label: t.humidity,
+            value: Text(t.percent(now.humidity), style: numberStyle(22)),
           ),
+          if (chill != null)
+            _DetailRow(
+              label: t.windChill,
+              note: t.windChillRisk(chill),
+              value: Text(degrees(shown(chill)), style: numberStyle(22)),
+            ),
+          if (humidex != null)
+            _DetailRow(
+              label: t.humidex,
+              note: t.humidexLevel(humidex),
+              // Humidex is always given on the Celsius scale, even in °F.
+              value: Text('${humidex.round()}', style: numberStyle(22)),
+            ),
           _DetailRow(
-            label: 'Air quality',
+            label: t.airQuality,
             note: aqi != null
-                ? '${aqiLevel(aqi)}${pm25 == null ? '' : ', fine particles ${pm25.round()} µg/m³'}'
+                ? '${aqiLevel(aqi)}${pm25 == null ? '' : ', ${t.fineParticles(pm25.round())}'}'
                 : airError != null
-                    ? 'Unavailable right now'
-                    : 'Loading…',
+                    ? t.unavailable
+                    : t.loading,
             value: aqi == null
                 ? Text('–', style: numberStyle(22))
                 : Row(
@@ -406,47 +462,47 @@ class DetailsPanel extends StatelessWidget {
                       ),
                       const SizedBox(width: 8),
                       Tooltip(
-                        message: 'US Air Quality Index, 0 to 500. Lower is better.',
+                        message: t.aqiTip,
                         child: Text('$aqi', style: numberStyle(22)),
                       ),
                     ],
                   ),
           ),
           _DetailRow(
-            label: 'UV index',
+            label: t.uvIndex,
             note: uv == null ? null : uvLevel(uv),
             value: Text(uv == null ? '–' : '${uv.round()}', style: numberStyle(22)),
           ),
           if (uvMax != null)
             _DetailRow(
-              label: 'UV peak today',
+              label: t.uvPeakToday,
               note: uvLevel(uvMax),
               value: Text('${uvMax.round()}', style: numberStyle(22)),
             ),
           _DetailRow(
-            label: 'Moon',
-            note: '${moon.name}, ${(moon.illumination * 100).round()}% lit',
+            label: t.moon,
+            note: t.moonLit(moon.name, (moon.illumination * 100).round()),
             value: MoonPicture(phase: moon, darkColor: colors.outlineVariant),
           ),
           if (sunrise != null)
             _DetailRow(
-              label: 'Sunrise',
+              label: t.sunrise,
               value: Text(hoursMinutes(sunrise), style: numberStyle(22)),
             ),
           if (sunset != null)
             _DetailRow(
-              label: 'Sunset',
+              label: t.sunset,
               value: Text(hoursMinutes(sunset), style: numberStyle(22)),
             ),
           if (sunrise != null && sunset != null)
             _DetailRow(
-              label: 'Daylight',
-              value: Text(_duration(sunset.difference(sunrise)), style: numberStyle(22)),
+              label: t.daylight,
+              value: Text(t.duration(sunset.difference(sunrise)), style: numberStyle(22)),
               last: true,
             ),
           const SizedBox(height: 14),
           Text(
-            'Updated ${hoursMinutes(now.time)}, local time. Refreshes every 15 minutes.',
+            t.updated(hoursMinutes(now.time), refreshMinutes),
             style: TextStyle(fontSize: 13, color: colors.onSurfaceVariant),
           ),
         ],
@@ -530,46 +586,98 @@ class _Credits extends StatelessWidget {
     return Wrap(
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        Text('Weather data by ', style: plain),
+        Text(t.creditsWeather, style: plain),
         link('Open-Meteo.com', 'https://open-meteo.com/'),
-        Text('. Place search by ', style: plain),
+        Text(t.creditsPlaces, style: plain),
         link('GeoNames', 'https://www.geonames.org/'),
-        Text('. Air quality from the ', style: plain),
-        link('Copernicus Atmosphere Monitoring Service', 'https://atmosphere.copernicus.eu/'),
-        Text('. Past weather from ', style: plain),
-        link('ERA5, Copernicus Climate Change Service', 'https://climate.copernicus.eu/'),
-        Text('. Alerts from ', style: plain),
-        link('Environment and Climate Change Canada', 'https://weather.gc.ca/'),
-        Text('. Aurora forecast from ', style: plain),
-        link('NOAA Space Weather Prediction Center', 'https://www.swpc.noaa.gov/'),
-        Text('. Radar from ', style: plain),
+        Text(t.creditsAir, style: plain),
+        link(t.creditsAirName, 'https://atmosphere.copernicus.eu/'),
+        Text(t.creditsPast, style: plain),
+        link(t.creditsPastName, 'https://climate.copernicus.eu/'),
+        Text(t.creditsAlerts, style: plain),
+        link(t.creditsAlertsName, t.fr ? 'https://meteo.gc.ca/' : 'https://weather.gc.ca/'),
+        Text(t.creditsAurora, style: plain),
+        link(t.creditsAuroraName, 'https://www.swpc.noaa.gov/'),
+        Text(t.creditsRadar, style: plain),
         link('RainViewer', 'https://www.rainviewer.com/'),
-        Text(', maps from ', style: plain),
-        link('OpenStreetMap contributors', 'https://www.openstreetmap.org/copyright'),
+        Text(t.creditsMaps, style: plain),
+        link(t.mapContributors, 'https://www.openstreetmap.org/copyright'),
         Text('.', style: plain),
       ],
     );
   }
 }
 
-String _weekdayName(DateTime date) {
-  const names = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-  return names[date.weekday - 1];
-}
+/// Golden and blue hour for today: the soft light photographers look for.
+class PhotoTimesPanel extends StatelessWidget {
+  const PhotoTimesPanel({
+    super.key,
+    required this.report,
+    required this.latitude,
+    required this.longitude,
+  });
 
-String _compassName(int degrees) {
-  const names = {
-    'N': 'north',
-    'NE': 'northeast',
-    'E': 'east',
-    'SE': 'southeast',
-    'S': 'south',
-    'SW': 'southwest',
-    'W': 'west',
-    'NW': 'northwest',
-  };
-  return names[compassDirection(degrees)]!;
-}
+  final WeatherReport report;
+  final double latitude;
+  final double longitude;
 
-/// "10 h 47 min".
-String _duration(Duration d) => '${d.inHours} h ${d.inMinutes % 60} min';
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final day = report.today?.date ?? report.current.time;
+    final times = photoTimes(latitude, longitude, day, report.utcOffset);
+    if (times.isEmpty) return const SizedBox.shrink();
+
+    String range(TimeSpan s) => t.timeRange(hoursMinutes(s.start), hoursMinutes(s.end));
+    final rows = <(String, TimeSpan?, Color)>[
+      (t.blueHourMorning, times.morningBlue, const Color(0xFF4A6FD0)),
+      (t.goldenHourMorning, times.morningGolden, const Color(0xFFE9A23B)),
+      (t.goldenHourEvening, times.eveningGolden, const Color(0xFFE9A23B)),
+      (t.blueHourEvening, times.eveningBlue, const Color(0xFF4A6FD0)),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(t.lightForPhotos, style: theme.textTheme.titleMedium)),
+              Tooltip(
+                message: t.photoTip,
+                child: Icon(Icons.info_outline, size: 18, color: colors.onSurfaceVariant),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final (label, span, swatch) in rows)
+            if (span != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(shape: BoxShape.circle, color: swatch),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(label, style: const TextStyle(fontSize: 15))),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(range(span), textAlign: TextAlign.right, style: numberStyle(19)),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'location.dart';
 import 'places.dart';
+import 'strings.dart';
 
 class CitySearchPage extends StatefulWidget {
   const CitySearchPage({super.key});
@@ -51,7 +52,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Find a city')),
+      appBar: AppBar(title: Text(t.findACity)),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -62,12 +63,12 @@ class _CitySearchPageState extends State<CitySearchPage> {
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
               decoration: InputDecoration(
-                hintText: 'City or town, like North Bay or Paris, France',
+                hintText: t.searchHint,
                 prefixIcon: const Icon(Icons.search),
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
                   icon: const Icon(Icons.arrow_forward),
-                  tooltip: 'Search',
+                  tooltip: t.search,
                   onPressed: _search,
                 ),
               ),
@@ -84,7 +85,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.my_location),
-                label: Text(_locating ? 'Finding you…' : 'Use my location'),
+                label: Text(_locating ? t.findingYou : t.useMyLocation),
               ),
             ),
             if (_locationError != null)
@@ -105,12 +106,8 @@ class _CitySearchPageState extends State<CitySearchPage> {
 
   Widget _buildResults() {
     if (_results == null) {
-      return const Center(
-        child: Text(
-          'Type a city or town, then press Enter.\n'
-          'Add a province or country after a comma to narrow it down.',
-          textAlign: TextAlign.center,
-        ),
+      return Center(
+        child: Text(t.searchEmpty, textAlign: TextAlign.center),
       );
     }
 
@@ -123,7 +120,7 @@ class _CitySearchPageState extends State<CitySearchPage> {
         if (snapshot.hasError) {
           return Center(
             child: Text(
-              'Search failed. ${snapshot.error.toString().replaceFirst('Exception: ', '')}',
+              t.searchFailed(snapshot.error.toString().replaceFirst('Exception: ', '')),
               textAlign: TextAlign.center,
             ),
           );
@@ -131,8 +128,8 @@ class _CitySearchPageState extends State<CitySearchPage> {
 
         final places = snapshot.data!;
         if (places.isEmpty) {
-          return const Center(
-            child: Text('No places match that name. Check the spelling, or try a larger town nearby.'),
+          return Center(
+            child: Text(t.noPlaces, textAlign: TextAlign.center),
           );
         }
 

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
+import 'strings.dart';
 
 /// A place you can get weather for.
 class Place {
@@ -59,19 +60,19 @@ Future<List<Place>> searchPlaces(String query) async {
   final uri = Uri.https('geocoding-api.open-meteo.com', '/v1/search', {
     'name': query,
     'count': '10',
-    'language': 'en',
+    'language': t.fr ? 'fr' : 'en', // French gives "Montréal", "Québec"...
   });
 
   final response = await http.get(uri).timeout(const Duration(seconds: 15));
   if (response.statusCode != 200) {
-    throw Exception('Search returned ${response.statusCode}');
+    throw Exception(t.serviceError(t.searchService, response.statusCode));
   }
 
   final Map<String, dynamic> data;
   try {
     data = jsonDecode(response.body) as Map<String, dynamic>;
   } on FormatException {
-    throw Exception('The search service had a temporary problem. Please try again.');
+    throw Exception(t.serviceHiccup(t.searchService));
   }
 
   // When nothing matches, Open-Meteo leaves out "results" entirely.

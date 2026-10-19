@@ -163,3 +163,7 @@ TextStyle numberStyle(double size, {FontWeight weight = FontWeight.w500, Color? 
     fontFeatures: const [FontFeature.tabularFigures()],
   );
 }
+
+/// The space at the left and right edges: roomy on a desktop window,
+/// tighter on a phone or a narrow window.
+double sideGap(BuildContext context) => MediaQuery.sizeOf(context).width < 600 ? 16 : 28;

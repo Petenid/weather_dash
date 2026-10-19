@@ -3,9 +3,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'alerts.dart';
+import 'platform.dart';
 import 'moon.dart';
 import 'places.dart';
 import 'sky_animation.dart';
+import 'strings.dart';
 import 'theme.dart';
 import 'updates.dart';
 import 'weather.dart';
@@ -94,7 +96,7 @@ class SkyHeader extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 1080),
                     child: Padding(
-                      padding: const EdgeInsets.fromLTRB(28, 20, 28, 0),
+                      padding: EdgeInsets.fromLTRB(sideGap(context), 20, sideGap(context), 0),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -112,16 +114,16 @@ class SkyHeader extends StatelessWidget {
                             _Banner(
                               icon: Icons.system_update_alt,
                               colour: Colors.white,
-                              text: 'Weather Dash ${update!.version} is available.',
-                              action: 'Download',
+                              text: t.updateAvailable(update!.version),
+                              action: t.download,
                               onTap: () => onOpenLink(update!.url),
                             ),
                           for (final alert in alerts)
                             _Banner(
                               icon: Icons.warning_amber_rounded,
                               colour: alert.displayColor,
-                              text: alert.area.isEmpty ? alert.name : '${alert.name} for ${alert.area}',
-                              action: 'Details',
+                              text: alert.area.isEmpty ? alert.name : t.alertFor(alert.name, alert.area),
+                              action: t.details,
                               onTap: () => _showAlert(context, alert, onOpenLink),
                             ),
                           if (favourites.isNotEmpty) ...[
@@ -190,7 +192,7 @@ class _TopBar extends StatelessWidget {
           child: Align(
             alignment: Alignment.centerLeft,
             child: Tooltip(
-              message: 'Find a city (Ctrl+F)',
+              message: t.findCityTip,
               child: InkWell(
                 onTap: onSearch,
                 borderRadius: BorderRadius.circular(8),
@@ -225,7 +227,7 @@ class _TopBar extends StatelessWidget {
         IconButton(
           icon: Icon(isFavourite ? Icons.star : Icons.star_border),
           color: isFavourite ? const Color(0xFFFFC34D) : Colors.white,
-          tooltip: isFavourite ? 'Remove from saved places (Ctrl+D)' : 'Save this place (Ctrl+D)',
+          tooltip: isFavourite ? t.removeFavouriteTip : t.saveFavouriteTip,
           onPressed: onToggleFavourite,
         ),
         const SizedBox(width: 8),
@@ -234,34 +236,37 @@ class _TopBar extends StatelessWidget {
         IconButton(
           icon: const Icon(Icons.refresh),
           color: Colors.white,
-          tooltip: 'Refresh (F5)',
+          tooltip: t.refreshTip,
           onPressed: onRefresh,
         ),
         PopupMenuButton<SkyMenuAction>(
           icon: const Icon(Icons.more_vert, color: Colors.white),
-          tooltip: 'More',
+          tooltip: t.more,
           onSelected: onMenu,
-          itemBuilder: (_) => const [
+          itemBuilder: (_) => [
             PopupMenuItem(
               value: SkyMenuAction.copyImage,
-              child: ListTile(leading: Icon(Icons.copy), title: Text('Copy as image')),
+              child: ListTile(leading: const Icon(Icons.copy), title: Text(t.copyImage)),
             ),
-            PopupMenuItem(
-              value: SkyMenuAction.saveImage,
-              child: ListTile(leading: Icon(Icons.image_outlined), title: Text('Save as image…')),
-            ),
-            PopupMenuItem(
-              value: SkyMenuAction.miniMode,
-              child: ListTile(
-                leading: Icon(Icons.picture_in_picture_alt_outlined),
-                title: Text('Mini mode'),
-                subtitle: Text('Ctrl+M'),
+            // Saving files and mini mode only make sense in the desktop app.
+            if (desktopFeatures)
+              PopupMenuItem(
+                value: SkyMenuAction.saveImage,
+                child: ListTile(leading: const Icon(Icons.image_outlined), title: Text(t.saveImage)),
               ),
-            ),
-            PopupMenuDivider(),
+            if (desktopFeatures)
+              PopupMenuItem(
+                value: SkyMenuAction.miniMode,
+                child: ListTile(
+                  leading: const Icon(Icons.picture_in_picture_alt_outlined),
+                  title: Text(t.miniMode),
+                  subtitle: const Text('Ctrl+M'),
+                ),
+              ),
+            const PopupMenuDivider(),
             PopupMenuItem(
               value: SkyMenuAction.settings,
-              child: ListTile(leading: Icon(Icons.settings_outlined), title: Text('Settings')),
+              child: ListTile(leading: const Icon(Icons.settings_outlined), title: Text(t.settings)),
             ),
           ],
         ),
@@ -329,19 +334,19 @@ void _showAlert(BuildContext context, WeatherAlert alert, void Function(String u
             children: [
               if (alert.area.isNotEmpty) Text(alert.area, style: const TextStyle(fontWeight: FontWeight.w600)),
               if (alert.expires != null)
-                Text('In effect until ${hoursMinutes(alert.expires!)} on ${alert.expires!.month}/${alert.expires!.day}.'),
+                Text(t.inEffectUntil(hoursMinutes(alert.expires!), alert.expires!)),
               const SizedBox(height: 12),
-              Text(alert.text.isEmpty ? 'No further details were given.' : alert.text),
+              Text(alert.text.isEmpty ? t.noAlertDetails : alert.text),
             ],
           ),
         ),
       ),
       actions: [
         TextButton(
-          onPressed: () => onOpenLink('https://weather.gc.ca/warnings/index_e.html'),
-          child: const Text('Open Environment Canada'),
+          onPressed: () => onOpenLink(t.envCanadaWarningsUrl),
+          child: Text(t.openEnvCanada),
         ),
-        FilledButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+        FilledButton(onPressed: () => Navigator.pop(context), child: Text(t.close)),
       ],
     ),
   );
@@ -424,7 +429,7 @@ class _UnitToggle extends StatelessWidget {
     }
 
     return Tooltip(
-      message: fahrenheit ? 'Show Celsius' : 'Show Fahrenheit',
+      message: fahrenheit ? t.showCelsius : t.showFahrenheit,
       child: InkWell(
         onTap: onToggle,
         borderRadius: BorderRadius.circular(8),
@@ -479,7 +484,7 @@ class _Waiting extends StatelessWidget {
                       backgroundColor: Colors.white,
                       foregroundColor: const Color(0xFF13202A),
                     ),
-                    child: const Text('Try again'),
+                    child: Text(t.tryAgain),
                   ),
                 ],
               ),
@@ -520,20 +525,22 @@ class _Conditions extends StatelessWidget {
                 children: [
                   Icon(weatherIcon(now.weatherCode, isDay: now.isDay), size: 28),
                   const SizedBox(width: 10),
-                  Text(
-                    describeWeather(now.weatherCode),
-                    style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w500),
+                  Flexible(
+                    child: Text(
+                      describeWeather(now.weatherCode),
+                      style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w500),
+                    ),
                   ),
                 ],
               ),
               const SizedBox(height: 8),
               Text(
-                'Feels like ${degrees(now.feelsLike)}',
+                t.feelsLike(degrees(now.feelsLike)),
                 style: TextStyle(fontSize: 18, color: soft),
               ),
               if (today != null)
                 Text(
-                  'High ${degrees(today.high)}    Low ${degrees(today.low)}',
+                  t.highLow(degrees(today.high), degrees(today.low)),
                   style: TextStyle(fontSize: 18, color: soft),
                 ),
             ],
@@ -565,13 +572,13 @@ class _StaleNotice extends StatelessWidget {
         spacing: 8,
         children: [
           const Icon(Icons.error_outline, size: 18),
-          Text("Couldn't refresh. Showing the forecast from ${hoursMinutes(updated)}."),
+          Text(t.staleForecast(hoursMinutes(updated))),
           Tooltip(
             message: message,
             child: TextButton(
               onPressed: onRetry,
               style: TextButton.styleFrom(foregroundColor: Colors.white),
-              child: const Text('Try again'),
+              child: Text(t.tryAgain),
             ),
           ),
         ],
@@ -602,15 +609,13 @@ class _SunHorizon extends StatelessWidget {
     String? next;
     if (sunrise != null && sunset != null) {
       if (now.isBefore(sunrise)) {
-        next = 'Sun rises in ${_until(now, sunrise)}';
+        next = t.sunrisesIn(_until(now, sunrise));
       } else if (now.isBefore(sunset)) {
-        next = 'Sun sets in ${_until(now, sunset)}';
+        next = t.sunsetsIn(_until(now, sunset));
       } else {
         // After sunset, the next sunrise is tomorrow's.
         final tomorrow = report.daily.length > 1 ? report.daily[1].sunrise : null;
-        next = tomorrow == null
-            ? 'The sun has set'
-            : 'Sun rises in ${_until(now, tomorrow)}';
+        next = tomorrow == null ? t.sunHasSet : t.sunrisesIn(_until(now, tomorrow));
       }
     }
 
@@ -631,7 +636,7 @@ class _SunHorizon extends StatelessWidget {
             Positioned(
               left: 0,
               top: 0,
-              child: Text('Sunrise ${hoursMinutes(sunrise)}', style: labelStyle),
+              child: Text(t.sunriseAt(hoursMinutes(sunrise)), style: labelStyle),
             ),
           if (next != null)
             Align(
@@ -642,16 +647,19 @@ class _SunHorizon extends StatelessWidget {
                   // At night, the moon's current phase sits beside the label.
                   if (!report.current.isDay) ...[
                     Tooltip(
-                      message: '${moon.name}, ${(moon.illumination * 100).round()}% lit',
+                      message: t.moonLit(moon.name, (moon.illumination * 100).round()),
                       child: MoonPicture(phase: moon, size: 18),
                     ),
                     const SizedBox(width: 8),
                   ],
-                  Text(
-                    next,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Colors.white.withValues(alpha: 0.85),
+                  Flexible(
+                    child: Text(
+                      next,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
                     ),
                   ),
                 ],
@@ -661,7 +669,7 @@ class _SunHorizon extends StatelessWidget {
             Positioned(
               right: 0,
               top: 0,
-              child: Text('Sunset ${hoursMinutes(sunset)}', style: labelStyle),
+              child: Text(t.sunsetAt(hoursMinutes(sunset)), style: labelStyle),
             ),
         ],
       ),
@@ -670,11 +678,7 @@ class _SunHorizon extends StatelessWidget {
 }
 
 /// "2 h 05 min" or "40 min" from one time to a later one.
-String _until(DateTime from, DateTime to) {
-  final minutes = to.difference(from).inMinutes;
-  if (minutes < 60) return '$minutes min';
-  return '${minutes ~/ 60} h ${(minutes % 60).toString().padLeft(2, '0')} min';
-}
+String _until(DateTime from, DateTime to) => t.minutesSpan(to.difference(from).inMinutes);
 
 class _SunPathPainter extends CustomPainter {
   _SunPathPainter({

@@ -7,6 +7,10 @@ The top of the window is a sky that changes with the real weather: bright blue o
 <!-- Screenshots go here: add images to docs/ and link them, for example
 ![Weather Dash on a clear day](docs/screenshot-day.png) -->
 
+## Try it in your browser
+
+The web version runs at **https://petenid.github.io/weather_dash/**, no installing needed. It has everything except the desktop-only extras (mini mode and saving pictures to a folder).
+
 ## Download
 
 Go to the [latest release](https://github.com/Petenid/weather_dash/releases/latest) and pick one:
@@ -18,7 +22,7 @@ Requires 64-bit Windows 10 or 11. The app isn't code-signed, so Windows SmartScr
 
 ## What it shows
 
-- Current conditions: temperature, feels-like, wind, humidity, UV index and air quality
+- Current conditions: temperature, feels-like, wind, humidity, UV index and air quality, plus Environment Canada's wind chill and humidex with their health-risk levels
 - The next 24 hours as a chart you can switch between temperature, chance of rain or snow, and wind
 - A 7-day forecast, with each day's low-to-high range drawn on a shared scale and coloured by temperature. Click a day for its hour-by-hour details
 - Three national forecast models (Canada's GEM, the US GFS and Europe's ECMWF) compared side by side, with a plain-language note on where they disagree
@@ -26,11 +30,14 @@ Requires 64-bit Windows 10 or 11. The app isn't code-signed, so Windows SmartScr
 - Official Environment Canada weather alerts for Canadian locations
 - A radar map of rain and snow over the last two hours
 - Sunrise, sunset, hours of daylight and the moon's phase
+- Golden hour and blue hour for photographers, worked out from the sun's position
 - City search for anywhere in the world, your current location, and saved places one click away
 - Mini mode: a small window that stays on top of your other windows
 - Copy or save a picture of the current weather to share
 - Works offline with the last forecast it downloaded, and tells you when a new version is out
+- English and Quebec French, following your system or chosen in settings, with French place names and Environment Canada alerts in French
 - Settings for 12- or 24-hour time, wind units, and light or dark appearance
+- Power saver: stops the animation and refreshes hourly. The sky also rests while Weather Dash is in the background
 - Refreshes itself every 15 minutes
 
 Keyboard shortcuts: **Ctrl+F** finds a city, **Ctrl+D** saves or removes the place on screen, **Ctrl+M** switches mini mode, **F5** or **Ctrl+R** refreshes.
@@ -62,6 +69,15 @@ None of these services needs an API key for personal use, so this repository con
    ```
 
 3. For a release build: `flutter build windows --release`. The app ends up in `build\windows\x64\runner\Release`.
+
+## Tests
+
+`flutter test` runs two sets of checks:
+
+- `test/widget_test.dart` checks the calculations: wind chill and humidex against Environment Canada's tables, the moon's phase, the sun's position, unit conversions, and French formatting.
+- `test/screens_test.dart` builds every screen in English and French, at desktop and phone sizes, from a saved sample forecast (`test/fixtures`). Any text that doesn't fit makes the test fail.
+
+GitHub runs both on every push.
 
 ## How releases are made
 
