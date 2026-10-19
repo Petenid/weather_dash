@@ -49,3 +49,6 @@ app.*.map.json
 
 # Installers and zips made by the release build
 /dist/
+
+# Personal notes kept out of the repository
+/SUBMISSION.md

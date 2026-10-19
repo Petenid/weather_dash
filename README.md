@@ -10,7 +10,7 @@ The top of the window is a sky that changes with the real weather: bright blue o
 |---|---|---|
 | ![Weather Dash in French](docs/screenshots/light-french.png) | ![Day details](docs/screenshots/day-details.png) | ![Mini mode](docs/screenshots/mini.png) |
 
-This was my entry for the local developers' group Monthly Build Challenge #1. The approach and what I learned are in [SUBMISSION.md](SUBMISSION.md).
+This was my entry for the local developers' group Monthly Build Challenge #1.
 
 ## Try it in your browser
 
