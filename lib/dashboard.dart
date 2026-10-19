@@ -203,9 +203,18 @@ class _DayRow extends StatelessWidget {
             children: [
               Icon(Icons.water_drop, size: 13, color: colors.primary),
               const SizedBox(width: 2),
-              Text(
-                t.percent(day.precipitationChance),
-                style: TextStyle(fontSize: 14, color: colors.primary),
+              // French adds a space before %, so let the number shrink a
+              // little rather than overflow if space is tight.
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    t.percent(day.precipitationChance),
+                    maxLines: 1,
+                    style: TextStyle(fontSize: 14, color: colors.primary),
+                  ),
+                ),
               ),
             ],
           )
@@ -247,7 +256,7 @@ class _DayRow extends StatelessWidget {
               ),
             ),
             // Only mention rain or snow when it's reasonably likely.
-            if (!compact) SizedBox(width: 64, child: rain),
+            if (!compact) SizedBox(width: 72, child: rain),
             SizedBox(
               width: 44,
               child: Text(
