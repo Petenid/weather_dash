@@ -22,7 +22,7 @@ Weather Dash is a weather dashboard built with **Flutter**, running as a Windows
 | Data | Open-Meteo for weather, models, history and air quality; Environment Canada for alerts; NOAA for the aurora; RainViewer and OpenStreetMap for radar. All free, all keyless |
 | Secrets | None needed. Every service works without an API key, so there's nothing to leak |
 | Packaging | GitHub Actions tests and builds every push, publishes the website, and turns a version tag into a release with an installer (Inno Setup) and a portable zip |
-| How it was built | Pair programming with Claude, an AI assistant. Claude wrote most of the code and explained each step; I installed the tools, ran and tested everything, made the decisions, and reported what broke |
+| How it was built | My first time pair programming with Claude, an AI assistant. Claude wrote most of the code and explained each step; I installed the tools, ran and tested everything, made the decisions, and reported what broke |
 
 Credits: weather data by [Open-Meteo.com](https://open-meteo.com/). Full credits are in the [README](README.md#data-and-credits).
 
@@ -38,4 +38,4 @@ Credits: weather data by [Open-Meteo.com](https://open-meteo.com/). Full credits
 
 **Canadian weather has its own rules.** Environment Canada only reports wind chill at 0 °C or colder, and humidex has its own discomfort scale. Using their formulas and wording made the numbers match what people here expect.
 
-**The basics matter too.** It was my first Flutter project. I learned to set up PATH and Visual Studio's C++ tools, to use Git and GitHub, and, the hard way, to turn on Auto Save in VS Code: my code "didn't work" twice because the file wasn't saved.
+**The basics matter too.** It was my first Flutter project and my first time pair programming with an AI. I learned to set up PATH and Visual Studio's C++ tools, to use Git and GitHub, and, the hard way, to turn on Auto Save in VS Code: my code "didn't work" twice because the file wasn't saved.
